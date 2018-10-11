@@ -4,3 +4,7 @@ version = "0.0.1"
 authors = ["Fenhl <fenhl@fenhl.net>"]
 
 [dependencies]
+reqwest = "*"
+serde = "1.0"
+serde_derive = "1.0"
+wrapped_enum = "*"
