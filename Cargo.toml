@@ -4,7 +4,15 @@ version = "0.0.1"
 authors = ["Fenhl <fenhl@fenhl.net>"]
 
 [dependencies]
+bigdecimal = "*"
+itertools = "*"
+lazy_static = "1"
+regex = "1"
 reqwest = "*"
-serde = "1.0"
-serde_derive = "1.0"
+serde = "1"
+serde_derive = "1"
 wrapped_enum = "*"
+
+[dependencies.chrono]
+version = "*"
+features = ["serde"]

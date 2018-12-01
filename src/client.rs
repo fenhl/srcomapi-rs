@@ -2,13 +2,25 @@
 
 use std::{
     fmt,
-    marker::PhantomData
+    iter::FromIterator,
+    marker::PhantomData,
+    sync::{
+        Arc,
+        RwLock
+    },
+    time::SystemTime
 };
 use reqwest::{
     self,
-    RequestBuilder
+    IntoUrl,
+    RequestBuilder,
+    Url
 };
-use super::Result;
+use serde::de::DeserializeOwned;
+use super::{
+    Result,
+    util::UrlDef
+};
 
 static BASE_URL: &'static str = "https://www.speedrun.com/api/v1";
 
@@ -25,6 +37,7 @@ pub enum NoAuth {}
 /// The client automatically inserts pauses between requests if necessary according to the API's [rate limits](https://github.com/speedruncomorg/api/blob/master/throttling.md). However, this only works if your application uses the same `Client` for all API requests. If you use multiple `Client`s, you risk getting HTTP `420` errors due to rate limiting.
 #[derive(Debug, Clone)]
 pub struct Client<A = NoAuth> {
+    request_timestamps: Arc<RwLock<Vec<SystemTime>>>,
     client: reqwest::Client,
     phantom: PhantomData<A>
 }
@@ -47,6 +60,7 @@ impl Client<NoAuth> {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(reqwest::header::USER_AGENT, reqwest::header::HeaderValue::from_static(user_agent));
         Ok(Client {
+            request_timestamps: Arc::new(RwLock::new(Vec::default())),
             client: reqwest::Client::builder()
                 .default_headers(headers)
                 .build()?,
@@ -76,6 +90,7 @@ impl Client<Auth> {
         headers.insert(reqwest::header::USER_AGENT, reqwest::header::HeaderValue::from_static(user_agent));
         headers.insert("X-API-Key", reqwest::header::HeaderValue::from_str(api_key)?);
         Ok(Client {
+            request_timestamps: Arc::new(RwLock::new(Vec::default())),
             client: reqwest::Client::builder()
                 .default_headers(headers)
                 .build()?,
@@ -86,8 +101,12 @@ impl Client<Auth> {
 
 impl<A> Client<A> {
     pub(crate) fn get(&self, url: impl fmt::Display) -> RequestBuilder {
+        self.get_abs(&format!("{}{}", BASE_URL, url))
+    }
+
+    pub(crate) fn get_abs(&self, url: impl IntoUrl) -> RequestBuilder {
         //TODO wait for rate limit
-        self.client.get(&format!("{}{}", BASE_URL, url))
+        self.client.get(url)
     }
 }
 
@@ -98,11 +117,25 @@ impl<A: Clone> Client<A> {
             client: self.clone()
         }
     }
+
+    pub(crate) fn get_annotated_collection<T: DeserializeOwned, C: FromIterator<AnnotatedData<T, A>>>(&self, url: impl fmt::Display) -> Result<C> {
+        Ok(
+            self.get(url)
+                .send()?
+                .error_for_status()?
+                .json::<ResponseData<Vec<_>>>()?
+                .data
+                .into_iter()
+                .map(|data| self.annotate(data))
+                .collect() //TODO get rid of this (lifetime issues)
+        )
+    }
 }
 
 impl From<Client<Auth>> for Client<NoAuth> {
     fn from(auth_client: Client<Auth>) -> Client<NoAuth> {
         Client {
+            request_timestamps: auth_client.request_timestamps.clone(),
             client: auth_client.client,
             phantom: PhantomData
         }
@@ -121,9 +154,16 @@ impl<'a> From<&'a Client<Auth>> for Client<NoAuth> {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub(crate) struct ResponseData<T> {
     pub(crate) data: T
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub(crate) struct Link {
+    pub(crate) rel: String,
+    #[serde(with = "UrlDef")]
+    pub(crate) uri: Url
 }
 
 /// This type is an implementation detail.
@@ -133,4 +173,13 @@ pub(crate) struct ResponseData<T> {
 pub struct AnnotatedData<T, A = NoAuth> {
     pub(crate) client: Client<A>,
     pub(crate) data: T
+}
+
+impl<T> From<AnnotatedData<T, Auth>> for AnnotatedData<T, NoAuth> {
+    fn from(annotated_data: AnnotatedData<T, Auth>) -> AnnotatedData<T> {
+        AnnotatedData {
+            client: annotated_data.client.into(),
+            data: annotated_data.data
+        }
+    }
 }

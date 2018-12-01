@@ -1,6 +1,10 @@
 //! Games are the things users do speedruns in
 
-use std::fmt;
+use std::{
+    fmt,
+    iter::FromIterator
+};
+use reqwest::Url;
 use super::super::{
     Result,
     client::{
@@ -8,18 +12,15 @@ use super::super::{
         Client,
         ResponseData
     },
-    model::{
-        category::Category,
-        paginated::PaginatedList
-    },
+    model::category::Category,
+    paginated::PaginatedList,
     util::UrlDef
 };
-use reqwest::Url;
 
 pub(crate) static LIST_URL: &'static str = "/games?_bulk=yes";
 
 /// The different names registered for a game.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Names {
     /// The game's international, or main, name.
     pub international: String,
@@ -30,7 +31,7 @@ pub struct Names {
 }
 
 /// The cached data for a game. This type is an implementation detail. You're probably looking for `Game` instead.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct GameData {
     id: String,
     abbreviation: String,
@@ -62,17 +63,8 @@ impl Game {
     }
 
     /// Returns all speedrun categories defined for the game.
-    pub fn categories(&self) -> Result<Vec<Category>> {
-        Ok(
-            self.client.get(format!("/games/{}/categories", self.data.id))
-                .send()?
-                .error_for_status()?
-                .json::<ResponseData<Vec<_>>>()?
-                .data
-                .into_iter()
-                .map(|cat_data| self.client.annotate(cat_data))
-                .collect()
-        )
+    pub fn categories<C: FromIterator<Category>>(&self) -> Result<C> {
+        self.client.get_annotated_collection(format!("/games/{}/categories", self.data.id))
     }
 
     /// Returns this game's API ID.
