@@ -17,7 +17,8 @@ use reqwest::{
     Url
 };
 use serde::de::DeserializeOwned;
-use super::{
+use serde_derive::Deserialize;
+use crate::{
     Result,
     util::UrlDef
 };

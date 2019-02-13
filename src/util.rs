@@ -4,8 +4,10 @@ use bigdecimal::{
     ToPrimitive,
     Zero
 };
+use lazy_static::lazy_static;
 use regex::Regex;
 use reqwest::Url;
+use serde_derive::Deserialize;
 
 lazy_static! {
     static ref DURATION_RE: Regex = Regex::new("^PT(?:([0-9.]+)H)?(?:([0-9.]+)M)?(?:([0-9.]+)S)?$").unwrap();

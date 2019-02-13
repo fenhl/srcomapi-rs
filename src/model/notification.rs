@@ -6,7 +6,8 @@ use std::{
 };
 use chrono::prelude::*;
 use reqwest::Url;
-use super::super::{
+use serde_derive::Deserialize;
+use crate::{
     Result,
     client::{
         AnnotatedData,

@@ -5,7 +5,8 @@ use std::{
     iter::FromIterator
 };
 use itertools::Itertools;
-use super::super::{
+use serde_derive::Deserialize;
+use crate::{
     OtherError,
     Result,
     client::{

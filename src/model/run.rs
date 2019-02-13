@@ -5,7 +5,8 @@ use std::{
     time::Duration
 };
 use reqwest::Url;
-use super::super::{
+use serde_derive::Deserialize;
+use crate::{
     Result,
     client::{
         AnnotatedData,

@@ -5,15 +5,7 @@
 #![deny(missing_docs, unused, unused_qualifications)]
 #![forbid(unused_import_braces)]
 
-extern crate bigdecimal;
-extern crate chrono;
-extern crate itertools;
-#[macro_use] extern crate lazy_static;
-extern crate regex;
-extern crate reqwest;
-extern crate serde;
-#[macro_use] extern crate serde_derive;
-#[macro_use] extern crate wrapped_enum;
+use wrapped_enum::wrapped_enum;
 
 pub mod client;
 pub mod model;

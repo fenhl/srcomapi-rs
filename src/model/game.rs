@@ -5,7 +5,8 @@ use std::{
     iter::FromIterator
 };
 use reqwest::Url;
-use super::super::{
+use serde_derive::Deserialize;
+use crate::{
     Result,
     client::{
         AnnotatedData,

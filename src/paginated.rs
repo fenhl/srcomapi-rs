@@ -5,7 +5,8 @@ use std::{
     vec
 };
 use serde::de::DeserializeOwned;
-use super::{
+use serde_derive::Deserialize;
+use crate::{
     Result,
     client::{
         AnnotatedData,

@@ -9,7 +9,11 @@ use std::{
     hash::Hash,
     iter::FromIterator
 };
-use super::super::{
+use serde_derive::{
+    Deserialize,
+    Serialize
+};
+use crate::{
     Result,
     client::{
         AnnotatedData,
