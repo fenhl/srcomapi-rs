@@ -101,7 +101,7 @@ impl Category {
     ///
     /// Will error if this is an IL category.
     pub fn leaderboard<C: FromIterator<Run>>(&self) -> Result<C> {
-        self.leaderboard_filtered(&Filter::default())
+        self.filtered_leaderboard(&Filter::default())
     }
 
     /// Returns a leaderboard for this full-game category, filtered by the given variable/value pairs.
@@ -109,7 +109,7 @@ impl Category {
     /// # Errors
     ///
     /// Will error if this is an IL category.
-    pub fn leaderboard_filtered<C: FromIterator<Run>>(&self, filter: &Filter) -> Result<C> {
+    pub fn filtered_leaderboard<C: FromIterator<Run>>(&self, filter: &Filter) -> Result<C> {
         Ok(
             self.client.get(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.data.id))
                 .query(filter)
@@ -131,16 +131,45 @@ impl Category {
 
     /// A convenience method returning the first place from this category's leaderboard, i.e. the current world record of the category.
     ///
-    /// In case of a tie or if no run has been verified for this category, `Ok(None)` is returned.
+    /// If the world record is tied, this method returns whichever run the API lists first.
+    ///
+    /// If no run has been verified for this category, `Ok(None)` is returned.
     pub fn wr(&self) -> Result<Option<Run>> {
+        self.filtered_wr(&Filter::default())
+    }
+
+    /// A convenience method returning the first place from a filtered version of this category's leaderboard.
+    ///
+    /// If the world record is tied, this method returns whichever run the API lists first.
+    ///
+    /// If no run has been verified for the given filter, `Ok(None)` is returned.
+    pub fn filtered_wr(&self, filter: &Filter) -> Result<Option<Run>> {
         let mut lb = self.client.get(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.data.id))
+            .query(filter)
             .send()?
             .error_for_status()?
             .json::<ResponseData<Leaderboard>>()?
             .data
             .runs;
-        if lb.is_empty() || lb.len() > 1 && lb[1].place == 1 { return Ok(None); }
+        if lb.is_empty() { return Ok(None); }
         Ok(Some(self.client.annotate(lb.remove(0).run)))
+    }
+
+    /// Returns true if the world record for this category is tied.
+    pub fn wr_is_tied(&self) -> Result<bool> {
+        self.filtered_wr_is_tied(&Filter::default())
+    }
+
+    /// Returns true if the world record for this category and the given filter is tied.
+    pub fn filtered_wr_is_tied(&self, filter: &Filter) -> Result<bool> {
+        let lb = self.client.get(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.data.id))
+            .query(filter)
+            .send()?
+            .error_for_status()?
+            .json::<ResponseData<Leaderboard>>()?
+            .data
+            .runs;
+        Ok(lb.len() > 1 && lb[1].place == 1)
     }
 }
 
