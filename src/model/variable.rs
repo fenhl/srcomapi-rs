@@ -1,8 +1,13 @@
 //! Variables are custom criteria to distinguish between runs done in the same category or level
 
 use std::{
-    collections::HashMap,
-    fmt
+    collections::{
+        BTreeMap,
+        HashMap
+    },
+    fmt,
+    hash::Hash,
+    iter::FromIterator
 };
 use super::super::{
     Result,
@@ -109,5 +114,27 @@ impl Variable {
 impl fmt::Display for Variable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.data.name.fmt(f)
+    }
+}
+
+/// This type is used to filter leaderboards by variable/value pairs via the `Category::leaderboard_filtered` method.
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct Filter(HashMap<String, String>);
+
+impl<K: fmt::Display, V: ToString> From<BTreeMap<K, V>> for Filter {
+    fn from(map: BTreeMap<K, V>) -> Filter {
+        Filter(map.into_iter().map(|(var_id, value_id)| (format!("var-{}", var_id), value_id.to_string())).collect())
+    }
+}
+
+impl<K: Eq + Hash + fmt::Display, V: ToString> From<HashMap<K, V>> for Filter {
+    fn from(map: HashMap<K, V>) -> Filter {
+        Filter(map.into_iter().map(|(var_id, value_id)| (format!("var-{}", var_id), value_id.to_string())).collect())
+    }
+}
+
+impl<K: fmt::Display, V: ToString> FromIterator<(K, V)> for Filter {
+    fn from_iter<I: IntoIterator<Item = (K, V)>>(i: I) -> Filter {
+        Filter(i.into_iter().map(|(var_id, value_id)| (format!("var-{}", var_id), value_id.to_string())).collect())
     }
 }

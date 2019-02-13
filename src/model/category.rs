@@ -20,7 +20,10 @@ use super::super::{
             Run,
             RunData
         },
-        variable::Variable
+        variable::{
+            Filter,
+            Variable
+        }
     }
 };
 
@@ -97,8 +100,18 @@ impl Category {
     ///
     /// Will error if this is an IL category.
     pub fn leaderboard<C: FromIterator<Run>>(&self) -> Result<C> {
+        self.leaderboard_filtered(Filter::default())
+    }
+
+    /// Returns a leaderboard for this full-game category, filtered by the given variable/value pairs.
+    ///
+    /// # Errors
+    ///
+    /// Will error if this is an IL category.
+    pub fn leaderboard_filtered<C: FromIterator<Run>>(&self, filter: impl Into<Filter>) -> Result<C> {
         Ok(
             self.client.get(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.data.id))
+                .query(&filter.into())
                 .send()?
                 .error_for_status()?
                 .json::<ResponseData<Leaderboard>>()?
