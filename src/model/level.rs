@@ -12,8 +12,7 @@ use crate::{
     client::{
         AnnotatedData,
         Client,
-        Link,
-        ResponseData
+        Link
     },
     model::{
         category::{
@@ -43,10 +42,6 @@ impl Level {
     pub fn from_id(client: &Client, id: impl fmt::Display) -> Result<Level> {
         Ok(client.annotate(
             client.get(format!("/levels/{}", id))?
-                .send()?
-                .error_for_status()?
-                .json::<ResponseData<_>>()?
-                .data
         ))
     }
 
@@ -57,10 +52,6 @@ impl Level {
             .collect_tuple().ok_or(OtherError::MissingGameRel)?;
         Ok(self.client.annotate(
             self.client.get_abs(link.uri.clone())?
-                .send()?
-                .error_for_status()?
-                .json::<ResponseData<_>>()?
-                .data
         ))
     }
 
@@ -86,12 +77,7 @@ impl ToLeaderboard for (&Level, &Category) {
     fn filtered_leaderboard<C: FromIterator<Run>>(self, filter: &Filter) -> Result<C> {
         let (level, category) = self;
         Ok(
-            level.client.get(format!("/leaderboards/{}/level/{}/{}", level.game()?.id(), level.id(), category.id()))?
-                .query(filter)
-                .send()?
-                .error_for_status()?
-                .json::<ResponseData<Leaderboard>>()?
-                .data
+            level.client.get_query::<_, _, Leaderboard>(format!("/leaderboards/{}/level/{}/{}", level.game()?.id(), level.id(), category.id()), filter)?
                 .runs
                 .into_iter()
                 .map(|entry| level.client.annotate(entry.run))
@@ -106,12 +92,7 @@ impl ToLeaderboard for (&Level, &Category) {
     /// If no run has been verified for the given level, category, and filter, `Ok(None)` is returned.
     fn filtered_wr(self, filter: &Filter) -> Result<Option<Run>> {
         let (level, category) = self;
-        let mut lb = level.client.get(format!("/leaderboards/{}/level/{}/{}", level.game()?.id(), level.id(), category.id()))?
-            .query(filter)
-            .send()?
-            .error_for_status()?
-            .json::<ResponseData<Leaderboard>>()?
-            .data
+        let mut lb = level.client.get_query::<_, _, Leaderboard>(format!("/leaderboards/{}/level/{}/{}", level.game()?.id(), level.id(), category.id()), filter)?
             .runs;
         if lb.is_empty() { return Ok(None); }
         Ok(Some(level.client.annotate(lb.remove(0).run)))
@@ -120,12 +101,7 @@ impl ToLeaderboard for (&Level, &Category) {
     /// Returns true if the world record for this level, category, and filter is tied.
     fn filtered_wr_is_tied(self, filter: &Filter) -> Result<bool> {
         let (level, category) = self;
-        let lb = level.client.get(format!("/leaderboards/{}/level/{}/{}", level.game()?.id(), level.id(), category.id()))?
-            .query(filter)
-            .send()?
-            .error_for_status()?
-            .json::<ResponseData<Leaderboard>>()?
-            .data
+        let lb = level.client.get_query::<_, _, Leaderboard>(format!("/leaderboards/{}/level/{}/{}", level.game()?.id(), level.id(), category.id()), filter)?
             .runs;
         Ok(lb.len() > 1 && lb[1].place == 1)
     }

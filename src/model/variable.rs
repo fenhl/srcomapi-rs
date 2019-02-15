@@ -17,8 +17,7 @@ use crate::{
     Result,
     client::{
         AnnotatedData,
-        Client,
-        ResponseData
+        Client
     }
 };
 
@@ -83,10 +82,6 @@ impl Variable {
     pub fn from_id(client: &Client, id: impl fmt::Display) -> Result<Variable> {
         Ok(client.annotate(
             client.get(format!("/variables/{}", id))?
-                .send()?
-                .error_for_status()?
-                .json::<ResponseData<_>>()?
-                .data
         ))
     }
 

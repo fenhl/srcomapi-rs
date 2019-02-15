@@ -90,25 +90,9 @@ impl<T: DeserializeOwned> Iterator for PaginatedList<T> {
         // if the cache is empty and we've seen the end, we're done
         if self.end_seen { return None; }
         // if the cache is empty and we haven't seen the end, download and cache the next page
-        let req_builder = match self.client.get(&self.uri) {
-            Ok(req_builder) => req_builder,
-            Err(e) => { return Some(Err(e)) }
-        };
-        let resp = match req_builder
-            .query(&[("offset", self.prefix_len)])
-            .query(&[("max", self.page_size)])
-            .send()
-        {
+        let PaginatedResult { data, pagination } = match self.client.get_raw(&self.uri, &[("offset", self.prefix_len), ("max", self.page_size.into())]) {
             Ok(resp) => resp,
-            Err(e) => { return Some(Err(e.into())); }
-        };
-        let mut resp = match resp.error_for_status() {
-            Ok(resp) => resp,
-            Err(e) => { return Some(Err(e.into())); }
-        };
-        let PaginatedResult { data, pagination } = match resp.json() {
-            Ok(j) => j,
-            Err(e) => { return Some(Err(e.into())); }
+            Err(e) => { return Some(Err(e)); }
         };
         assert_eq!(usize::from(pagination.size), data.len());
         if pagination.size < pagination.max { self.end_seen = true; }

@@ -7,8 +7,7 @@ use crate::{
     Result,
     client::{
         AnnotatedData,
-        Client,
-        ResponseData
+        Client
     },
     paginated::PaginatedList
 };
@@ -43,10 +42,6 @@ impl User {
     pub fn from_id(client: &Client, id: impl fmt::Display) -> Result<User> {
         Ok(client.annotate(
             client.get(format!("/users/{}", id))?
-                .send()?
-                .error_for_status()?
-                .json::<ResponseData<_>>()?
-                .data
         ))
     }
 

@@ -31,6 +31,8 @@ wrapped_enum! {
         #[allow(missing_docs)]
         Reqwest(reqwest::Error),
         #[allow(missing_docs)]
+        SerDe(serde_json::Error),
+        #[allow(missing_docs)]
         SystemTime(SystemTimeError)
     }
 }

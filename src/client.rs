@@ -1,7 +1,7 @@
 //! The `Client` type is the entry point to the API.
 
 use std::{
-    collections::VecDeque,
+    collections::HashMap,
     fmt,
     iter::FromIterator,
     marker::PhantomData,
@@ -18,10 +18,12 @@ use std::{
 use reqwest::{
     self,
     IntoUrl,
-    RequestBuilder,
     Url
 };
-use serde::de::DeserializeOwned;
+use serde::{
+    Serialize,
+    de::DeserializeOwned
+};
 use serde_derive::Deserialize;
 use crate::{
     Result,
@@ -31,6 +33,12 @@ use crate::{
 const RATE_LIMIT_NUM_REQUESTS: usize = 100;
 const RATE_LIMIT_INTERVAL: Duration = Duration::from_secs(60);
 static BASE_URL: &str = "https://www.speedrun.com/api/v1";
+
+#[derive(Debug)]
+struct RequestInfo {
+    timestamp: SystemTime,
+    data: serde_json::Value
+}
 
 /// A marker type used as a type parameter on `Client` to indicate that the client is authenticated.
 #[derive(Debug, Clone, Copy)]
@@ -45,7 +53,7 @@ pub enum NoAuth {}
 /// The client automatically inserts pauses between requests if necessary according to the API's [rate limits](https://github.com/speedruncomorg/api/blob/master/throttling.md). However, this only works if your application uses the same `Client` for all API requests. If you use multiple `Client`s, you risk getting HTTP `420` errors due to rate limiting.
 #[derive(Debug, Clone)]
 pub struct Client<A = NoAuth> {
-    request_timestamps: Arc<RwLock<VecDeque<SystemTime>>>,
+    recent_requests: Arc<RwLock<HashMap<Url, RequestInfo>>>,
     client: reqwest::Client,
     phantom: PhantomData<A>
 }
@@ -68,7 +76,7 @@ impl Client<NoAuth> {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(reqwest::header::USER_AGENT, reqwest::header::HeaderValue::from_static(user_agent));
         Ok(Client {
-            request_timestamps: Arc::new(RwLock::new(VecDeque::with_capacity(RATE_LIMIT_NUM_REQUESTS))),
+            recent_requests: Arc::new(RwLock::new(HashMap::default())),
             client: reqwest::Client::builder()
                 .default_headers(headers)
                 .build()?,
@@ -98,7 +106,7 @@ impl Client<Auth> {
         headers.insert(reqwest::header::USER_AGENT, reqwest::header::HeaderValue::from_static(user_agent));
         headers.insert("X-API-Key", reqwest::header::HeaderValue::from_str(api_key)?);
         Ok(Client {
-            request_timestamps: Arc::new(RwLock::new(VecDeque::with_capacity(RATE_LIMIT_NUM_REQUESTS))),
+            recent_requests: Arc::new(RwLock::new(HashMap::default())),
             client: reqwest::Client::builder()
                 .default_headers(headers)
                 .build()?,
@@ -108,33 +116,62 @@ impl Client<Auth> {
 }
 
 impl<A> Client<A> {
-    pub(crate) fn get(&self, url: impl fmt::Display) -> Result<RequestBuilder> {
-        self.get_abs(&format!("{}{}", BASE_URL, url))
-    }
-
-    pub(crate) fn get_abs(&self, url: impl IntoUrl) -> Result<RequestBuilder> {
-        // wait for rate limit
-        'rate_limit: loop {
+    pub(crate) fn get_raw<U: IntoUrl, Q: Serialize + ?Sized, T: DeserializeOwned>(&self, url: U, query: &Q) -> Result<T> {
+        let url = url.into_url()?;
+        Ok('rate_limit: loop {
             {
-                let timestamps = self.request_timestamps.read().expect("request timestamps lock poisoned");
-                if timestamps.len() >= RATE_LIMIT_NUM_REQUESTS {
-                    let elapsed = timestamps.front().unwrap().elapsed()?;
+                // check cache
+                let cache = self.recent_requests.read().expect("recent requests lock poisoned");
+                if let Some(cache_entry) = cache.get(&url) {
+                    return Ok(serde_json::from_value(cache_entry.data.clone())?);
+                }
+                // wait for rate limit
+                if cache.len() >= RATE_LIMIT_NUM_REQUESTS {
+                    let elapsed = cache.values().min_by_key(|cache_entry| cache_entry.timestamp).unwrap().timestamp.elapsed()?;
                     if elapsed < RATE_LIMIT_INTERVAL {
-                        drop(timestamps);
+                        drop(cache);
                         thread::sleep(RATE_LIMIT_INTERVAL - elapsed);
                     }
                 }
             }
-            let mut timestamps = self.request_timestamps.write().expect("request timestamps lock poisoned");
-            while timestamps.len() >= RATE_LIMIT_NUM_REQUESTS {
-                if timestamps.front().unwrap().elapsed()? < RATE_LIMIT_INTERVAL { continue 'rate_limit; }
-                timestamps.pop_front();
+            let mut cache = self.recent_requests.write().expect("recent requests lock poisoned");
+            while cache.len() >= RATE_LIMIT_NUM_REQUESTS {
+                if cache.values().min_by_key(|cache_entry| cache_entry.timestamp).unwrap().timestamp.elapsed()? < RATE_LIMIT_INTERVAL {
+                    continue 'rate_limit;
+                }
+                let oldest_url = cache.iter().min_by_key(|(_, cache_entry)| cache_entry.timestamp).unwrap().0.clone();
+                cache.remove(&oldest_url);
             }
-            // record new request time
-            timestamps.push_back(SystemTime::now());
-            // start request builder
-            break Ok(self.client.get(url));
-        }
+            // send request
+            let mut response = self.client.get(url)
+                .query(query)
+                .send()?
+                .error_for_status()?;
+            let response_data = response.json::<serde_json::Value>()?;
+            // insert response into cache
+            cache.insert(response.url().clone(), RequestInfo {
+                timestamp: SystemTime::now(),
+                data: response_data.clone()
+            });
+            // return response
+            break serde_json::from_value(response_data)?;
+        })
+    }
+
+    pub(crate) fn get<U: fmt::Display, T: DeserializeOwned>(&self, url: U) -> Result<T> {
+        self.get_abs(&format!("{}{}", BASE_URL, url))
+    }
+
+    pub(crate) fn get_abs<T: DeserializeOwned>(&self, url: impl IntoUrl) -> Result<T> {
+        self.get_abs_query(url, &Vec::<(String, String)>::default())
+    }
+
+    pub(crate) fn get_query<U: fmt::Display, Q: Serialize + ?Sized, T: DeserializeOwned>(&self, url: U, query: &Q) -> Result<T> {
+        self.get_abs_query(&format!("{}{}", BASE_URL, url), query)
+    }
+
+    pub(crate) fn get_abs_query<Q: Serialize + ?Sized, T: DeserializeOwned>(&self, url: impl IntoUrl, query: &Q) -> Result<T> {
+        Ok(self.get_raw::<_, _, ResponseData<_>>(url, query)?.data)
     }
 }
 
@@ -148,11 +185,7 @@ impl<A: Clone> Client<A> {
 
     pub(crate) fn get_annotated_collection<T: DeserializeOwned, C: FromIterator<AnnotatedData<T, A>>>(&self, url: impl fmt::Display) -> Result<C> {
         Ok(
-            self.get(url)?
-                .send()?
-                .error_for_status()?
-                .json::<ResponseData<Vec<_>>>()?
-                .data
+            self.get::<_, Vec<_>>(url)?
                 .into_iter()
                 .map(|data| self.annotate(data))
                 .collect() //TODO get rid of this (lifetime issues)
@@ -163,7 +196,7 @@ impl<A: Clone> Client<A> {
 impl From<Client<Auth>> for Client<NoAuth> {
     fn from(auth_client: Client<Auth>) -> Client<NoAuth> {
         Client {
-            request_timestamps: auth_client.request_timestamps,
+            recent_requests: auth_client.recent_requests,
             client: auth_client.client,
             phantom: PhantomData
         }
@@ -183,8 +216,8 @@ impl<'a> From<&'a Client<Auth>> for Client<NoAuth> {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub(crate) struct ResponseData<T> {
-    pub(crate) data: T
+struct ResponseData<T> {
+    data: T
 }
 
 #[derive(Debug, Deserialize, Clone)]
