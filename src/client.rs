@@ -123,7 +123,9 @@ impl<A> Client<A> {
                 // check cache
                 let cache = self.recent_requests.read().expect("recent requests lock poisoned");
                 if let Some(cache_entry) = cache.get(&url) {
-                    return Ok(serde_json::from_value(cache_entry.data.clone())?);
+                    if cache_entry.timestamp.elapsed()? < RATE_LIMIT_INTERVAL {
+                        return Ok(serde_json::from_value(cache_entry.data.clone())?);
+                    }
                 }
                 // wait for rate limit
                 if cache.len() >= RATE_LIMIT_NUM_REQUESTS {
