@@ -115,12 +115,14 @@ impl<A> Client<A> {
     pub(crate) fn get_abs(&self, url: impl IntoUrl) -> Result<RequestBuilder> {
         // wait for rate limit
         'rate_limit: loop {
-            let timestamps = self.request_timestamps.read().expect("request timestamps lock poisoned");
-            if timestamps.len() >= RATE_LIMIT_NUM_REQUESTS {
-                let elapsed = timestamps.front().unwrap().elapsed()?;
-                if elapsed < RATE_LIMIT_INTERVAL {
-                    drop(timestamps);
-                    thread::sleep(RATE_LIMIT_INTERVAL - elapsed);
+            {
+                let timestamps = self.request_timestamps.read().expect("request timestamps lock poisoned");
+                if timestamps.len() >= RATE_LIMIT_NUM_REQUESTS {
+                    let elapsed = timestamps.front().unwrap().elapsed()?;
+                    if elapsed < RATE_LIMIT_INTERVAL {
+                        drop(timestamps);
+                        thread::sleep(dbg!(RATE_LIMIT_INTERVAL - elapsed));
+                    }
                 }
             }
             let mut timestamps = self.request_timestamps.write().expect("request timestamps lock poisoned");
