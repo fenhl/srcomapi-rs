@@ -1,6 +1,7 @@
 //! The `Client` type is the entry point to the API.
 
 use std::{
+    borrow::Borrow,
     collections::HashMap,
     fmt,
     iter::FromIterator,
@@ -20,10 +21,7 @@ use reqwest::{
     IntoUrl,
     Url
 };
-use serde::{
-    Serialize,
-    de::DeserializeOwned
-};
+use serde::de::DeserializeOwned;
 use serde_derive::Deserialize;
 use crate::{
     Result,
@@ -116,8 +114,10 @@ impl Client<Auth> {
 }
 
 impl<A> Client<A> {
-    pub(crate) fn get_raw<U: IntoUrl, Q: Serialize + ?Sized, T: DeserializeOwned>(&self, url: U, query: &Q) -> Result<T> {
-        let url = url.into_url()?;
+    pub(crate) fn get_raw<U: IntoUrl, K: AsRef<str>, V: AsRef<str>, Q: IntoIterator, T: DeserializeOwned>(&self, url: U, query: Q) -> Result<T>
+    where Q::Item: Borrow<(K, V)> {
+        let mut url = url.into_url()?;
+        url.query_pairs_mut().extend_pairs(query);
         Ok('rate_limit: loop {
             {
                 // check cache
@@ -145,13 +145,12 @@ impl<A> Client<A> {
                 cache.remove(&oldest_url);
             }
             // send request
-            let mut response = self.client.get(url)
-                .query(query)
+            let response_data = self.client.get(url.clone())
                 .send()?
-                .error_for_status()?;
-            let response_data = response.json::<serde_json::Value>()?;
+                .error_for_status()?
+                .json::<serde_json::Value>()?;
             // insert response into cache
-            cache.insert(response.url().clone(), RequestInfo {
+            cache.insert(url, RequestInfo {
                 timestamp: SystemTime::now(),
                 data: response_data.clone()
             });
@@ -164,16 +163,18 @@ impl<A> Client<A> {
         self.get_abs(&format!("{}{}", BASE_URL, url))
     }
 
-    pub(crate) fn get_abs<T: DeserializeOwned>(&self, url: impl IntoUrl) -> Result<T> {
+    pub(crate) fn get_abs<U: IntoUrl, T: DeserializeOwned>(&self, url: U) -> Result<T> {
         self.get_abs_query(url, &Vec::<(String, String)>::default())
     }
 
-    pub(crate) fn get_query<U: fmt::Display, Q: Serialize + ?Sized, T: DeserializeOwned>(&self, url: U, query: &Q) -> Result<T> {
+    pub(crate) fn get_query<U: fmt::Display, K: AsRef<str>, V: AsRef<str>, Q: IntoIterator, T: DeserializeOwned>(&self, url: U, query: Q) -> Result<T>
+    where Q::Item: Borrow<(K, V)> {
         self.get_abs_query(&format!("{}{}", BASE_URL, url), query)
     }
 
-    pub(crate) fn get_abs_query<Q: Serialize + ?Sized, T: DeserializeOwned>(&self, url: impl IntoUrl, query: &Q) -> Result<T> {
-        Ok(self.get_raw::<_, _, ResponseData<_>>(url, query)?.data)
+    pub(crate) fn get_abs_query<U: IntoUrl, K: AsRef<str>, V: AsRef<str>, Q: IntoIterator, T: DeserializeOwned>(&self, url: U, query: Q) -> Result<T>
+    where Q::Item: Borrow<(K, V)> {
+        Ok(self.get_raw::<_, _, _, _, ResponseData<_>>(url, query)?.data)
     }
 }
 

@@ -143,7 +143,7 @@ impl ToLeaderboard for &Category {
     /// Will error if this is an IL category.
     fn filtered_leaderboard<C: FromIterator<Run>>(self, filter: &Filter) -> Result<C> {
         Ok(
-            self.client.get_query::<_, _, Leaderboard>(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.id()), filter)?
+            self.client.get_query::<_, _, _, _, Leaderboard>(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.id()), filter)?
                 .runs
                 .into_iter()
                 .map(|entry| self.client.annotate(entry.run))
@@ -157,7 +157,7 @@ impl ToLeaderboard for &Category {
     ///
     /// If no run has been verified for the given filter, `Ok(None)` is returned.
     fn filtered_wr(self, filter: &Filter) -> Result<Option<Run>> {
-        let mut lb = self.client.get_query::<_, _, Leaderboard>(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.id()), filter)?
+        let mut lb = self.client.get_query::<_, _, _, _, Leaderboard>(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.id()), filter)?
             .runs;
         if lb.is_empty() { return Ok(None); }
         Ok(Some(self.client.annotate(lb.remove(0).run)))
@@ -165,7 +165,7 @@ impl ToLeaderboard for &Category {
 
     /// Returns true if the world record for this category and the given filter is tied.
     fn filtered_wr_is_tied(self, filter: &Filter) -> Result<bool> {
-        let lb = self.client.get_query::<_, _, Leaderboard>(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.id()), filter)?
+        let lb = self.client.get_query::<_, _, _, _, Leaderboard>(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.id()), filter)?
             .runs;
         Ok(lb.len() > 1 && lb[1].place == 1)
     }

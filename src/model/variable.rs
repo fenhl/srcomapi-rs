@@ -3,7 +3,8 @@
 use std::{
     collections::{
         BTreeMap,
-        HashMap
+        HashMap,
+        hash_map
     },
     fmt,
     hash::Hash,
@@ -135,5 +136,14 @@ impl<K: Eq + Hash + fmt::Display, V: ToString> From<HashMap<K, V>> for Filter {
 impl<K: fmt::Display, V: ToString> FromIterator<(K, V)> for Filter {
     fn from_iter<I: IntoIterator<Item = (K, V)>>(i: I) -> Filter {
         Filter(i.into_iter().map(|(var_id, value_id)| (format!("var-{}", var_id), value_id.to_string())).collect())
+    }
+}
+
+impl<'a> IntoIterator for &'a Filter {
+    type IntoIter = hash_map::Iter<'a, String, String>;
+    type Item = (&'a String, &'a String);
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
     }
 }
