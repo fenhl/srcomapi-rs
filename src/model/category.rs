@@ -29,14 +29,14 @@ use crate::{
 };
 
 #[derive(Debug, Deserialize, Clone)]
-struct Leaderboard {
-    runs: Vec<LeaderboardEntry>
+pub(crate) struct Leaderboard {
+    pub(crate) runs: Vec<LeaderboardEntry>
 }
 
 #[derive(Debug, Deserialize, Clone)]
-struct LeaderboardEntry {
-    place: usize,
-    run: RunData
+pub(crate) struct LeaderboardEntry {
+    pub(crate) place: usize,
+    pub(crate) run: RunData
 }
 
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
@@ -95,23 +95,64 @@ impl Category {
         self.data.cat_type == CategoryType::PerLevel
     }
 
-    /// Returns the leaderboard for this full-game category, i.e. all non-obsoleted runs.
-    ///
-    /// # Errors
-    ///
-    /// Will error if this is an IL category.
-    pub fn leaderboard<C: FromIterator<Run>>(&self) -> Result<C> {
+    /// Returns all variables applicable to this category.
+    pub fn variables<C: FromIterator<Variable>>(&self) -> Result<C> {
+        self.client.get_annotated_collection(format!("/categories/{}/variables", self.id()))
+    }
+}
+
+/// This trait is implemented on types for which leaderboards are available, namely:
+///
+/// * `&Category` (full-game leaderboards), and
+/// * `(&Level, &Category)` (individual-level leaderboards).
+///
+/// It provides methods to access these leaderboards.
+pub trait ToLeaderboard: Sized {
+    /// Returns a leaderboard for this category, filtered by the given variable/value pairs.
+    fn filtered_leaderboard<C: FromIterator<Run>>(self, filter: &Filter) -> Result<C>;
+
+    /// A convenience method returning the first place from a filtered version of this category's leaderboard.
+    fn filtered_wr(self, filter: &Filter) -> Result<Option<Run>>;
+
+    /// Returns true if the world record for this category and the given filter is tied.
+    fn filtered_wr_is_tied(self, filter: &Filter) -> Result<bool>;
+
+    /// Returns the leaderboard for this category, i.e. all non-obsoleted runs.
+    fn leaderboard<C: FromIterator<Run>>(self) -> Result<C> {
         self.filtered_leaderboard(&Filter::default())
     }
 
+    /// A convenience method returning the first place from this category's leaderboard, i.e. the current world record of the category.
+    ///
+    /// If the world record is tied, this method returns whichever run the API lists first.
+    ///
+    /// If no run has been verified for this category, `Ok(None)` is returned.
+    fn wr(self) -> Result<Option<Run>> {
+        self.filtered_wr(&Filter::default())
+    }
+
+    /// Returns true if the world record for this category is tied.
+    fn wr_is_tied(self) -> Result<bool> {
+        self.filtered_wr_is_tied(&Filter::default())
+    }
+}
+
+/// Displays the category name.
+impl fmt::Display for Category {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.data.name.fmt(f)
+    }
+}
+
+impl ToLeaderboard for &Category {
     /// Returns a leaderboard for this full-game category, filtered by the given variable/value pairs.
     ///
     /// # Errors
     ///
     /// Will error if this is an IL category.
-    pub fn filtered_leaderboard<C: FromIterator<Run>>(&self, filter: &Filter) -> Result<C> {
+    fn filtered_leaderboard<C: FromIterator<Run>>(self, filter: &Filter) -> Result<C> {
         Ok(
-            self.client.get(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.data.id))
+            self.client.get(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.id()))
                 .query(filter)
                 .send()?
                 .error_for_status()?
@@ -124,27 +165,13 @@ impl Category {
         )
     }
 
-    /// Returns all variables applicable to this category.
-    pub fn variables<C: FromIterator<Variable>>(&self) -> Result<C> {
-        self.client.get_annotated_collection(format!("/categories/{}/variables", self.data.id))
-    }
-
-    /// A convenience method returning the first place from this category's leaderboard, i.e. the current world record of the category.
-    ///
-    /// If the world record is tied, this method returns whichever run the API lists first.
-    ///
-    /// If no run has been verified for this category, `Ok(None)` is returned.
-    pub fn wr(&self) -> Result<Option<Run>> {
-        self.filtered_wr(&Filter::default())
-    }
-
     /// A convenience method returning the first place from a filtered version of this category's leaderboard.
     ///
     /// If the world record is tied, this method returns whichever run the API lists first.
     ///
     /// If no run has been verified for the given filter, `Ok(None)` is returned.
-    pub fn filtered_wr(&self, filter: &Filter) -> Result<Option<Run>> {
-        let mut lb = self.client.get(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.data.id))
+    fn filtered_wr(self, filter: &Filter) -> Result<Option<Run>> {
+        let mut lb = self.client.get(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.id()))
             .query(filter)
             .send()?
             .error_for_status()?
@@ -155,14 +182,9 @@ impl Category {
         Ok(Some(self.client.annotate(lb.remove(0).run)))
     }
 
-    /// Returns true if the world record for this category is tied.
-    pub fn wr_is_tied(&self) -> Result<bool> {
-        self.filtered_wr_is_tied(&Filter::default())
-    }
-
     /// Returns true if the world record for this category and the given filter is tied.
-    pub fn filtered_wr_is_tied(&self, filter: &Filter) -> Result<bool> {
-        let lb = self.client.get(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.data.id))
+    fn filtered_wr_is_tied(self, filter: &Filter) -> Result<bool> {
+        let lb = self.client.get(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.id()))
             .query(filter)
             .send()?
             .error_for_status()?
@@ -170,12 +192,5 @@ impl Category {
             .data
             .runs;
         Ok(lb.len() > 1 && lb[1].place == 1)
-    }
-}
-
-/// Displays the category name.
-impl fmt::Display for Category {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.data.name.fmt(f)
     }
 }

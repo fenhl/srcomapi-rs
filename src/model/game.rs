@@ -13,7 +13,10 @@ use crate::{
         Client,
         ResponseData
     },
-    model::category::Category,
+    model::{
+        category::Category,
+        level::Level
+    },
     paginated::PaginatedList,
     util::UrlDef
 };
@@ -65,12 +68,17 @@ impl Game {
 
     /// Returns all speedrun categories defined for the game.
     pub fn categories<C: FromIterator<Category>>(&self) -> Result<C> {
-        self.client.get_annotated_collection(format!("/games/{}/categories", self.data.id))
+        self.client.get_annotated_collection(format!("/games/{}/categories", self.id()))
     }
 
     /// Returns this game's API ID.
     pub fn id(&self) -> &str {
         &self.data.id
+    }
+
+    /// Returns all individual levels defined for the game.
+    pub fn levels<C: FromIterator<Level>>(&self) -> Result<C> {
+        self.client.get_annotated_collection(format!("/games/{}/levels", self.id()))
     }
 
     /// Returns the different names registered for this game.

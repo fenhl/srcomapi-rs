@@ -2,6 +2,7 @@
 
 pub mod category;
 pub mod game;
+pub mod level;
 pub mod notification;
 pub mod run;
 pub mod user;
