@@ -121,7 +121,7 @@ impl<A> Client<A> {
                     let elapsed = timestamps.front().unwrap().elapsed()?;
                     if elapsed < RATE_LIMIT_INTERVAL {
                         drop(timestamps);
-                        thread::sleep(dbg!(RATE_LIMIT_INTERVAL - elapsed));
+                        thread::sleep(RATE_LIMIT_INTERVAL - elapsed);
                     }
                 }
             }
