@@ -42,7 +42,7 @@ impl Level {
     /// Returns the level with the given ID.
     pub fn from_id(client: &Client, id: impl fmt::Display) -> Result<Level> {
         Ok(client.annotate(
-            client.get(format!("/levels/{}", id))
+            client.get(format!("/levels/{}", id))?
                 .send()?
                 .error_for_status()?
                 .json::<ResponseData<_>>()?
@@ -56,7 +56,7 @@ impl Level {
             .filter(|link| &link.rel == "game")
             .collect_tuple().ok_or(OtherError::MissingGameRel)?;
         Ok(self.client.annotate(
-            self.client.get_abs(link.uri.clone())
+            self.client.get_abs(link.uri.clone())?
                 .send()?
                 .error_for_status()?
                 .json::<ResponseData<_>>()?
@@ -86,7 +86,7 @@ impl ToLeaderboard for (&Level, &Category) {
     fn filtered_leaderboard<C: FromIterator<Run>>(self, filter: &Filter) -> Result<C> {
         let (level, category) = self;
         Ok(
-            level.client.get(format!("/leaderboards/{}/level/{}/{}", level.game()?.id(), level.id(), category.id()))
+            level.client.get(format!("/leaderboards/{}/level/{}/{}", level.game()?.id(), level.id(), category.id()))?
                 .query(filter)
                 .send()?
                 .error_for_status()?
@@ -106,7 +106,7 @@ impl ToLeaderboard for (&Level, &Category) {
     /// If no run has been verified for the given level, category, and filter, `Ok(None)` is returned.
     fn filtered_wr(self, filter: &Filter) -> Result<Option<Run>> {
         let (level, category) = self;
-        let mut lb = level.client.get(format!("/leaderboards/{}/level/{}/{}", level.game()?.id(), level.id(), category.id()))
+        let mut lb = level.client.get(format!("/leaderboards/{}/level/{}/{}", level.game()?.id(), level.id(), category.id()))?
             .query(filter)
             .send()?
             .error_for_status()?
@@ -120,7 +120,7 @@ impl ToLeaderboard for (&Level, &Category) {
     /// Returns true if the world record for this level, category, and filter is tied.
     fn filtered_wr_is_tied(self, filter: &Filter) -> Result<bool> {
         let (level, category) = self;
-        let lb = level.client.get(format!("/leaderboards/{}/level/{}/{}", level.game()?.id(), level.id(), category.id()))
+        let lb = level.client.get(format!("/leaderboards/{}/level/{}/{}", level.game()?.id(), level.id(), category.id()))?
             .query(filter)
             .send()?
             .error_for_status()?

@@ -63,7 +63,7 @@ impl Category {
     /// Returns the category with the given ID.
     pub fn from_id(client: &Client, id: impl fmt::Display) -> Result<Category> {
         Ok(client.annotate(
-            client.get(format!("/categories/{}", id))
+            client.get(format!("/categories/{}", id))?
                 .send()?
                 .error_for_status()?
                 .json::<ResponseData<_>>()?
@@ -77,7 +77,7 @@ impl Category {
             .filter(|link| &link.rel == "game")
             .collect_tuple().ok_or(OtherError::MissingGameRel)?;
         Ok(self.client.annotate(
-            self.client.get_abs(link.uri.clone())
+            self.client.get_abs(link.uri.clone())?
                 .send()?
                 .error_for_status()?
                 .json::<ResponseData<_>>()?
@@ -152,7 +152,7 @@ impl ToLeaderboard for &Category {
     /// Will error if this is an IL category.
     fn filtered_leaderboard<C: FromIterator<Run>>(self, filter: &Filter) -> Result<C> {
         Ok(
-            self.client.get(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.id()))
+            self.client.get(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.id()))?
                 .query(filter)
                 .send()?
                 .error_for_status()?
@@ -171,7 +171,7 @@ impl ToLeaderboard for &Category {
     ///
     /// If no run has been verified for the given filter, `Ok(None)` is returned.
     fn filtered_wr(self, filter: &Filter) -> Result<Option<Run>> {
-        let mut lb = self.client.get(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.id()))
+        let mut lb = self.client.get(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.id()))?
             .query(filter)
             .send()?
             .error_for_status()?
@@ -184,7 +184,7 @@ impl ToLeaderboard for &Category {
 
     /// Returns true if the world record for this category and the given filter is tied.
     fn filtered_wr_is_tied(self, filter: &Filter) -> Result<bool> {
-        let lb = self.client.get(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.id()))
+        let lb = self.client.get(format!("/leaderboards/{}/category/{}", self.game()?.id(), self.id()))?
             .query(filter)
             .send()?
             .error_for_status()?

@@ -90,7 +90,11 @@ impl<T: DeserializeOwned> Iterator for PaginatedList<T> {
         // if the cache is empty and we've seen the end, we're done
         if self.end_seen { return None; }
         // if the cache is empty and we haven't seen the end, download and cache the next page
-        let resp = match self.client.get(&self.uri)
+        let req_builder = match self.client.get(&self.uri) {
+            Ok(req_builder) => req_builder,
+            Err(e) => { return Some(Err(e)) }
+        };
+        let resp = match req_builder
             .query(&[("offset", self.prefix_len)])
             .query(&[("max", self.page_size)])
             .send()

@@ -5,6 +5,7 @@
 #![deny(missing_docs, unused, unused_qualifications)]
 #![forbid(unused_import_braces)]
 
+use std::time::SystemTimeError;
 use wrapped_enum::wrapped_enum;
 
 pub mod client;
@@ -28,7 +29,9 @@ wrapped_enum! {
         #[allow(missing_docs)]
         Other(OtherError),
         #[allow(missing_docs)]
-        Reqwest(reqwest::Error)
+        Reqwest(reqwest::Error),
+        #[allow(missing_docs)]
+        SystemTime(SystemTimeError)
     }
 }
 

@@ -42,7 +42,7 @@ impl User {
     /// Returns the user with the given ID or username.
     pub fn from_id(client: &Client, id: impl fmt::Display) -> Result<User> {
         Ok(client.annotate(
-            client.get(format!("/users/{}", id))
+            client.get(format!("/users/{}", id))?
                 .send()?
                 .error_for_status()?
                 .json::<ResponseData<_>>()?

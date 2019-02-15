@@ -58,7 +58,7 @@ impl Game {
     /// Returns the game with the given ID or abbreviation.
     pub fn from_id(client: &Client, id: impl fmt::Display) -> Result<Game> {
         Ok(client.annotate(
-            client.get(format!("/games/{}", id))
+            client.get(format!("/games/{}", id))?
                 .send()?
                 .error_for_status()?
                 .json::<ResponseData<_>>()?

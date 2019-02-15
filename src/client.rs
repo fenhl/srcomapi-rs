@@ -1,6 +1,7 @@
 //! The `Client` type is the entry point to the API.
 
 use std::{
+    collections::VecDeque,
     fmt,
     iter::FromIterator,
     marker::PhantomData,
@@ -8,7 +9,11 @@ use std::{
         Arc,
         RwLock
     },
-    time::SystemTime
+    thread,
+    time::{
+        Duration,
+        SystemTime
+    }
 };
 use reqwest::{
     self,
@@ -23,7 +28,9 @@ use crate::{
     util::UrlDef
 };
 
-static BASE_URL: &'static str = "https://www.speedrun.com/api/v1";
+const RATE_LIMIT_NUM_REQUESTS: usize = 100;
+const RATE_LIMIT_INTERVAL: Duration = Duration::from_secs(60);
+static BASE_URL: &str = "https://www.speedrun.com/api/v1";
 
 /// A marker type used as a type parameter on `Client` to indicate that the client is authenticated.
 #[derive(Debug, Clone, Copy)]
@@ -38,7 +45,7 @@ pub enum NoAuth {}
 /// The client automatically inserts pauses between requests if necessary according to the API's [rate limits](https://github.com/speedruncomorg/api/blob/master/throttling.md). However, this only works if your application uses the same `Client` for all API requests. If you use multiple `Client`s, you risk getting HTTP `420` errors due to rate limiting.
 #[derive(Debug, Clone)]
 pub struct Client<A = NoAuth> {
-    request_timestamps: Arc<RwLock<Vec<SystemTime>>>,
+    request_timestamps: Arc<RwLock<VecDeque<SystemTime>>>,
     client: reqwest::Client,
     phantom: PhantomData<A>
 }
@@ -61,7 +68,7 @@ impl Client<NoAuth> {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(reqwest::header::USER_AGENT, reqwest::header::HeaderValue::from_static(user_agent));
         Ok(Client {
-            request_timestamps: Arc::new(RwLock::new(Vec::default())),
+            request_timestamps: Arc::new(RwLock::new(VecDeque::with_capacity(RATE_LIMIT_NUM_REQUESTS))),
             client: reqwest::Client::builder()
                 .default_headers(headers)
                 .build()?,
@@ -91,7 +98,7 @@ impl Client<Auth> {
         headers.insert(reqwest::header::USER_AGENT, reqwest::header::HeaderValue::from_static(user_agent));
         headers.insert("X-API-Key", reqwest::header::HeaderValue::from_str(api_key)?);
         Ok(Client {
-            request_timestamps: Arc::new(RwLock::new(Vec::default())),
+            request_timestamps: Arc::new(RwLock::new(VecDeque::with_capacity(RATE_LIMIT_NUM_REQUESTS))),
             client: reqwest::Client::builder()
                 .default_headers(headers)
                 .build()?,
@@ -101,13 +108,31 @@ impl Client<Auth> {
 }
 
 impl<A> Client<A> {
-    pub(crate) fn get(&self, url: impl fmt::Display) -> RequestBuilder {
+    pub(crate) fn get(&self, url: impl fmt::Display) -> Result<RequestBuilder> {
         self.get_abs(&format!("{}{}", BASE_URL, url))
     }
 
-    pub(crate) fn get_abs(&self, url: impl IntoUrl) -> RequestBuilder {
-        //TODO wait for rate limit
-        self.client.get(url)
+    pub(crate) fn get_abs(&self, url: impl IntoUrl) -> Result<RequestBuilder> {
+        // wait for rate limit
+        'rate_limit: loop {
+            let timestamps = self.request_timestamps.read().expect("request timestamps lock poisoned");
+            if timestamps.len() >= RATE_LIMIT_NUM_REQUESTS {
+                let elapsed = timestamps.front().unwrap().elapsed()?;
+                if elapsed < RATE_LIMIT_INTERVAL {
+                    drop(timestamps);
+                    thread::sleep(RATE_LIMIT_INTERVAL - elapsed);
+                }
+            }
+            let mut timestamps = self.request_timestamps.write().expect("request timestamps lock poisoned");
+            while timestamps.len() >= RATE_LIMIT_NUM_REQUESTS {
+                if timestamps.front().unwrap().elapsed()? < RATE_LIMIT_INTERVAL { continue 'rate_limit; }
+                timestamps.pop_front();
+            }
+            // record new request time
+            timestamps.push_back(SystemTime::now());
+            // start request builder
+            break Ok(self.client.get(url));
+        }
     }
 }
 
@@ -121,7 +146,7 @@ impl<A: Clone> Client<A> {
 
     pub(crate) fn get_annotated_collection<T: DeserializeOwned, C: FromIterator<AnnotatedData<T, A>>>(&self, url: impl fmt::Display) -> Result<C> {
         Ok(
-            self.get(url)
+            self.get(url)?
                 .send()?
                 .error_for_status()?
                 .json::<ResponseData<Vec<_>>>()?
@@ -136,7 +161,7 @@ impl<A: Clone> Client<A> {
 impl From<Client<Auth>> for Client<NoAuth> {
     fn from(auth_client: Client<Auth>) -> Client<NoAuth> {
         Client {
-            request_timestamps: auth_client.request_timestamps.clone(),
+            request_timestamps: auth_client.request_timestamps,
             client: auth_client.client,
             phantom: PhantomData
         }
