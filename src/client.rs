@@ -69,7 +69,8 @@ impl<'a> AuthType<'a> for NoAuth {
 pub struct Builder<'a, A: AuthType<'a> = NoAuth> {
     user_agent: &'static str,
     api_key: A::Info,
-    cache_timeout: Option<Duration>
+    cache_timeout: Option<Duration>,
+    num_tries: u8
 }
 
 impl<'a> Builder<'a, NoAuth> {
@@ -82,7 +83,8 @@ impl<'a> Builder<'a, NoAuth> {
         Builder {
             user_agent,
             api_key: (),
-            cache_timeout: Some(RATE_LIMIT_INTERVAL)
+            cache_timeout: Some(RATE_LIMIT_INTERVAL),
+            num_tries: 1
         }
     }
 
@@ -95,7 +97,8 @@ impl<'a> Builder<'a, NoAuth> {
         Builder {
             user_agent: self.user_agent,
             api_key,
-            cache_timeout: self.cache_timeout
+            cache_timeout: self.cache_timeout,
+            num_tries: self.num_tries
         }
     }
 
@@ -114,6 +117,7 @@ impl<'a> Builder<'a, NoAuth> {
         Ok(Client {
             recent_requests: Arc::new(RwLock::new(HashMap::default())),
             cache_timeout: self.cache_timeout,
+            num_tries: self.num_tries,
             client: reqwest::Client::builder()
                 .default_headers(headers)
                 .build()?,
@@ -139,6 +143,7 @@ impl<'a> Builder<'a, Auth> {
         Ok(Client {
             recent_requests: Arc::new(RwLock::new(HashMap::default())),
             cache_timeout: self.cache_timeout,
+            num_tries: self.num_tries,
             client: reqwest::Client::builder()
                 .default_headers(headers)
                 .build()?,
@@ -153,11 +158,22 @@ impl<'a, A: AuthType<'a>> Builder<'a, A> {
     /// `None` means cache entries live forever and once a response for a given endpoint has been cached will be reused for the remainder of the client's lifetime.
     ///
     /// The default value is the value of `RATE_LIMIT_INTERVAL`, i.e. the same as the rate limiting interval.
-    pub fn cache_timeout(self, timeout: Option<Duration>) -> Builder<'a, A> {
-        Builder {
-            cache_timeout: timeout,
-            ..self
-        }
+    pub fn cache_timeout(self, cache_timeout: Option<Duration>) -> Builder<'a, A> {
+        Builder { cache_timeout, ..self }
+    }
+
+    /// Configures the number of times each request is attempted before a server or network error is returned.
+    ///
+    /// Client errors are always returned immediately and not retried.
+    ///
+    /// The default value is 1, meaning server errors are also returned immediately.
+    ///
+    /// # Panics
+    ///
+    /// When `0` is passed.
+    pub fn num_tries(self, num_tries: u8) -> Builder<'a, A> {
+        if num_tries == 0 { panic!("0 passed to srcomapi::client::Builder::num_tries"); }
+        Builder { num_tries, ..self }
     }
 }
 
@@ -168,6 +184,7 @@ impl<'a, A: AuthType<'a>> Builder<'a, A> {
 pub struct Client<A = NoAuth> {
     recent_requests: Arc<RwLock<HashMap<Url, RequestInfo>>>,
     cache_timeout: Option<Duration>,
+    num_tries: u8,
     client: reqwest::Client,
     phantom: PhantomData<A>
 }
@@ -248,10 +265,21 @@ impl<A> Client<A> {
                 cache.remove(&oldest_url);
             }
             // send request
-            let response_data = self.client.get(url.clone())
-                .send()?
-                .error_for_status()?
-                .json::<serde_json::Value>()?;
+            let mut response_data = self.client.get(url.clone())
+                .send()
+                .and_then(|resp| resp.error_for_status())
+                .and_then(|mut resp| resp.json::<serde_json::Value>());
+            for _ in 1..self.num_tries {
+                match response_data {
+                    Ok(_) => { break; }
+                    Err(e) => if e.is_client_error() || e.is_serialization() { return Err(e.into()); } // return client errors immediately
+                }
+                response_data = self.client.get(url.clone())
+                    .send()
+                    .and_then(|resp| resp.error_for_status())
+                    .and_then(|mut resp| resp.json::<serde_json::Value>());
+            }
+            let response_data = response_data?;
             // insert response into cache
             cache.insert(url, RequestInfo {
                 timestamp: SystemTime::now(),
@@ -304,6 +332,7 @@ impl From<Client<Auth>> for Client<NoAuth> {
         Client {
             recent_requests: auth_client.recent_requests,
             cache_timeout: auth_client.cache_timeout,
+            num_tries: auth_client.num_tries,
             client: auth_client.client,
             phantom: PhantomData
         }
