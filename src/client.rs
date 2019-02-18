@@ -28,8 +28,12 @@ use crate::{
     util::UrlDef
 };
 
-const RATE_LIMIT_NUM_REQUESTS: usize = 100;
-const RATE_LIMIT_INTERVAL: Duration = Duration::from_secs(60);
+/// The maximum number requests allowed by the API within one `RATE_LIMIT_INTERVAL`. This number is made public for informational purposes only; the `Client` adheres to the rate limit automatically.
+pub const RATE_LIMIT_NUM_REQUESTS: usize = 100;
+
+/// The duration window used for rate limiting. This number is made public for informational purposes only; the `Client` adheres to the rate limit automatically.
+pub const RATE_LIMIT_INTERVAL: Duration = Duration::from_secs(60);
+
 static BASE_URL: &str = "https://www.speedrun.com/api/v1";
 
 #[derive(Debug)]
@@ -38,13 +42,124 @@ struct RequestInfo {
     data: serde_json::Value
 }
 
+/// Helper trait implemented on the marker types `NoAuth` and `Auth`.
+pub trait AuthType<'a> {
+    /// Used to stor the API key in `Builder<Auth>`.
+    type Info: 'a;
+}
+
 /// A marker type used as a type parameter on `Client` to indicate that the client is authenticated.
 #[derive(Debug, Clone, Copy)]
 pub enum Auth {}
 
+impl<'a> AuthType<'a> for Auth {
+    type Info = &'a str;
+}
+
 /// A marker type used as a type parameter on `Client` to indicate that the client is not authenticated. This is the default.
 #[derive(Debug, Clone, Copy)]
 pub enum NoAuth {}
+
+impl<'a> AuthType<'a> for NoAuth {
+    type Info = ();
+}
+
+/// A `Client` builder that allows configuring additional settings of the client.
+#[derive(Debug)]
+pub struct Builder<'a, A: AuthType<'a> = NoAuth> {
+    user_agent: &'static str,
+    api_key: A::Info,
+    cache_timeout: Option<Duration>
+}
+
+impl<'a> Builder<'a, NoAuth> {
+    /// Creates a new client builder with the given user agent and default values for the other options.
+    ///
+    /// For details on the user agent, see the `Client::new` docs.
+    ///
+    /// For details on the other configuration options, as well as their default values, see the docs on the respective methods.
+    pub fn new(user_agent: &'static str) -> Builder {
+        Builder {
+            user_agent,
+            api_key: (),
+            cache_timeout: Some(RATE_LIMIT_INTERVAL)
+        }
+    }
+
+    /// When used, the resulting client will authenticate as a user using the given API key.
+    ///
+    /// For details on obtaining a user's API key, see [the docs on authentication](https://github.com/speedruncomorg/api/blob/master/authentication.md).
+    ///
+    /// The default client is unauthenticated and cannot access API endpoints that require authentication. This library enforces that restriction on the type level.
+    pub fn auth(self, api_key: &str) -> Builder<Auth> {
+        Builder {
+            user_agent: self.user_agent,
+            api_key,
+            cache_timeout: self.cache_timeout
+        }
+    }
+
+    /// Builds and returns the configured client.
+    ///
+    /// # Errors
+    ///
+    /// This method fails if native TLS backend cannot be initialized.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if the user agent contains invalid [header value characters](https://docs.rs/reqwest/*/reqwest/header/struct.HeaderValue.html#method.from_static).
+    pub fn build(self) -> Result<Client<NoAuth>> {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(reqwest::header::USER_AGENT, reqwest::header::HeaderValue::from_static(self.user_agent));
+        Ok(Client {
+            recent_requests: Arc::new(RwLock::new(HashMap::default())),
+            cache_timeout: self.cache_timeout,
+            client: reqwest::Client::builder()
+                .default_headers(headers)
+                .build()?,
+            phantom: PhantomData
+        })
+    }
+}
+
+impl<'a> Builder<'a, Auth> {
+    /// Builds and returns the configured client.
+    ///
+    /// # Errors
+    ///
+    /// This method fails if native TLS backend cannot be initialized or the API key contains invalid [header value characters](https://docs.rs/reqwest/*/reqwest/header/struct.HeaderValue.html#method.from_static).
+    ///
+    /// # Panics
+    ///
+    /// This method panics if the user agent contains invalid [header value characters](https://docs.rs/reqwest/*/reqwest/header/struct.HeaderValue.html#method.from_static).
+    pub fn build(self) -> Result<Client<Auth>> {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(reqwest::header::USER_AGENT, reqwest::header::HeaderValue::from_static(self.user_agent));
+        headers.insert("X-API-Key", reqwest::header::HeaderValue::from_str(self.api_key)?);
+        Ok(Client {
+            recent_requests: Arc::new(RwLock::new(HashMap::default())),
+            cache_timeout: self.cache_timeout,
+            client: reqwest::Client::builder()
+                .default_headers(headers)
+                .build()?,
+            phantom: PhantomData
+        })
+    }
+}
+
+impl<'a, A: AuthType<'a>> Builder<'a, A> {
+    /// Configures the duration for which a given API response will be cached.
+    ///
+    /// `None` means cache entries live forever and once a response for a given endpoint has been cached will be reused for the remainder of the client's lifetime.
+    ///
+    /// The default value is the value of `RATE_LIMIT_INTERVAL`, i.e. the same as the rate limiting interval.
+    pub fn cache_timeout(self, timeout: Option<Duration>) -> Builder<'a, A> {
+        Builder {
+            cache_timeout: timeout,
+            ..self
+        }
+    }
+}
 
 /// The entry point to the API.
 ///
@@ -52,6 +167,7 @@ pub enum NoAuth {}
 #[derive(Debug, Clone)]
 pub struct Client<A = NoAuth> {
     recent_requests: Arc<RwLock<HashMap<Url, RequestInfo>>>,
+    cache_timeout: Option<Duration>,
     client: reqwest::Client,
     phantom: PhantomData<A>
 }
@@ -63,6 +179,8 @@ impl Client<NoAuth> {
     ///
     /// > If possible, please set a descriptive `User-Agent` HTTP header. This makes it easier for us to see how the API is being used and optimise it further. A good user agent string includes your project name and possibly the version number, like `my-bot/4.20`.
     ///
+    /// For additional configuration options, use the `Builder` type instead.
+    ///
     /// # Errors
     ///
     /// This method fails if native TLS backend cannot be initialized.
@@ -71,15 +189,7 @@ impl Client<NoAuth> {
     ///
     /// This method panics if the user agent contains invalid [header value characters](https://docs.rs/reqwest/*/reqwest/header/struct.HeaderValue.html#method.from_static).
     pub fn new(user_agent: &'static str) -> Result<Client> {
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert(reqwest::header::USER_AGENT, reqwest::header::HeaderValue::from_static(user_agent));
-        Ok(Client {
-            recent_requests: Arc::new(RwLock::new(HashMap::default())),
-            client: reqwest::Client::builder()
-                .default_headers(headers)
-                .build()?,
-            phantom: PhantomData
-        })
+        Builder::new(user_agent).build()
     }
 }
 
@@ -92,6 +202,8 @@ impl Client<Auth> {
     ///
     /// > If possible, please set a descriptive `User-Agent` HTTP header. This makes it easier for us to see how the API is being used and optimise it further. A good user agent string includes your project name and possibly the version number, like `my-bot/4.20`.
     ///
+    /// For additional configuration options, use the `Builder` type instead.
+    ///
     /// # Errors
     ///
     /// This method fails if native TLS backend cannot be initialized or the API key contains invalid [header value characters](https://docs.rs/reqwest/*/reqwest/header/struct.HeaderValue.html#method.from_static).
@@ -100,16 +212,7 @@ impl Client<Auth> {
     ///
     /// This method panics if the user agent contains invalid [header value characters](https://docs.rs/reqwest/*/reqwest/header/struct.HeaderValue.html#method.from_static).
     pub fn new(user_agent: &'static str, api_key: &str) -> Result<Client<Auth>> {
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert(reqwest::header::USER_AGENT, reqwest::header::HeaderValue::from_static(user_agent));
-        headers.insert("X-API-Key", reqwest::header::HeaderValue::from_str(api_key)?);
-        Ok(Client {
-            recent_requests: Arc::new(RwLock::new(HashMap::default())),
-            client: reqwest::Client::builder()
-                .default_headers(headers)
-                .build()?,
-            phantom: PhantomData
-        })
+        Builder::new(user_agent).auth(api_key).build()
     }
 }
 
@@ -123,8 +226,8 @@ impl<A> Client<A> {
                 // check cache
                 let cache = self.recent_requests.read().expect("recent requests lock poisoned");
                 if let Some(cache_entry) = cache.get(&url) {
-                    if cache_entry.timestamp.elapsed()? < RATE_LIMIT_INTERVAL {
-                        return Ok(serde_json::from_value(cache_entry.data.clone())?);
+                    if self.cache_timeout.map_or(Ok(true), |timeout| cache_entry.timestamp.elapsed().map(|elapsed| elapsed < timeout))? {
+                        break serde_json::from_value(cache_entry.data.clone())?;
                     }
                 }
                 // wait for rate limit
@@ -200,6 +303,7 @@ impl From<Client<Auth>> for Client<NoAuth> {
     fn from(auth_client: Client<Auth>) -> Client<NoAuth> {
         Client {
             recent_requests: auth_client.recent_requests,
+            cache_timeout: auth_client.cache_timeout,
             client: auth_client.client,
             phantom: PhantomData
         }
