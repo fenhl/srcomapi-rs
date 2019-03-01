@@ -13,8 +13,7 @@ use crate::{
         AnnotatedData,
         Auth,
         Client
-    },
-    util::UrlDef
+    }
 };
 
 /// The kind of link contained in a notification. Returned by `Notification::webllink_rel`.
@@ -34,7 +33,7 @@ pub enum Rel {
 #[derive(Debug, Deserialize, Clone)]
 struct Item {
     rel: Rel,
-    #[serde(with = "UrlDef")]
+    #[serde(with = "url_serde")]
     uri: Url
 }
 

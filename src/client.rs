@@ -4,8 +4,10 @@ use std::{
     borrow::Borrow,
     collections::HashMap,
     fmt,
+    fs::File,
     iter::FromIterator,
     marker::PhantomData,
+    path::PathBuf,
     sync::{
         Arc,
         RwLock
@@ -22,11 +24,12 @@ use reqwest::{
     Url
 };
 use serde::de::DeserializeOwned;
-use serde_derive::Deserialize;
-use crate::{
-    Result,
-    util::UrlDef
+use serde_derive::{
+    Deserialize,
+    Serialize
 };
+use url_serde::Serde;
+use crate::Result;
 
 /// The maximum number requests allowed by the API within one `RATE_LIMIT_INTERVAL`. This number is made public for informational purposes only; the `Client` adheres to the rate limit automatically.
 pub const RATE_LIMIT_NUM_REQUESTS: usize = 100;
@@ -36,7 +39,7 @@ pub const RATE_LIMIT_INTERVAL: Duration = Duration::from_secs(60);
 
 static BASE_URL: &str = "https://www.speedrun.com/api/v1";
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 struct RequestInfo {
     timestamp: SystemTime,
     data: serde_json::Value
@@ -69,6 +72,8 @@ impl<'a> AuthType<'a> for NoAuth {
 pub struct Builder<'a, A: AuthType<'a> = NoAuth> {
     user_agent: &'static str,
     api_key: A::Info,
+    cache: HashMap<Url, RequestInfo>,
+    cache_path: Option<PathBuf>,
     cache_timeout: Option<Duration>,
     num_tries: u8
 }
@@ -83,6 +88,8 @@ impl<'a> Builder<'a, NoAuth> {
         Builder {
             user_agent,
             api_key: (),
+            cache: HashMap::default(),
+            cache_path: None,
             cache_timeout: Some(RATE_LIMIT_INTERVAL),
             num_tries: 1
         }
@@ -97,6 +104,8 @@ impl<'a> Builder<'a, NoAuth> {
         Builder {
             user_agent: self.user_agent,
             api_key,
+            cache: self.cache,
+            cache_path: self.cache_path,
             cache_timeout: self.cache_timeout,
             num_tries: self.num_tries
         }
@@ -115,7 +124,8 @@ impl<'a> Builder<'a, NoAuth> {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(reqwest::header::USER_AGENT, reqwest::header::HeaderValue::from_static(self.user_agent));
         Ok(Client {
-            recent_requests: Arc::new(RwLock::new(HashMap::default())),
+            cache: Arc::new(RwLock::new(self.cache)),
+            cache_path: self.cache_path,
             cache_timeout: self.cache_timeout,
             num_tries: self.num_tries,
             client: reqwest::Client::builder()
@@ -141,7 +151,8 @@ impl<'a> Builder<'a, Auth> {
         headers.insert(reqwest::header::USER_AGENT, reqwest::header::HeaderValue::from_static(self.user_agent));
         headers.insert("X-API-Key", reqwest::header::HeaderValue::from_str(self.api_key)?);
         Ok(Client {
-            recent_requests: Arc::new(RwLock::new(HashMap::default())),
+            cache: Arc::new(RwLock::new(self.cache)),
+            cache_path: self.cache_path,
             cache_timeout: self.cache_timeout,
             num_tries: self.num_tries,
             client: reqwest::Client::builder()
@@ -160,6 +171,25 @@ impl<'a, A: AuthType<'a>> Builder<'a, A> {
     /// The default value is the value of `RATE_LIMIT_INTERVAL`, i.e. the same as the rate limiting interval.
     pub fn cache_timeout(self, cache_timeout: Option<Duration>) -> Builder<'a, A> {
         Builder { cache_timeout, ..self }
+    }
+
+    /// Initializes the cache for API responses from disk.
+    ///
+    /// Cache entries older than the currently configured `cache_timeout` are discarded when read, so `cache_timeout` must be called *before* this method to work as expected.
+    ///
+    /// # Errors
+    ///
+    /// If an I/O error occurs, or if the file is not a valid cache.
+    pub fn disk_cache(self, cache_path: PathBuf) -> Result<Builder<'a, A>> {
+        let mut cache = serde_json::from_reader::<_, HashMap<Serde<Url>, RequestInfo>>(File::open(&cache_path)?)?;
+        if let Some(timeout) = self.cache_timeout {
+            cache.retain(|_, req_info| req_info.timestamp.elapsed().map(|elapsed| elapsed < timeout).unwrap_or_default());
+        }
+        Ok(Builder {
+            cache: cache.into_iter().map(|(url, info)| (url.into_inner(), info)).collect(),
+            cache_path: Some(cache_path),
+            ..self
+        })
     }
 
     /// Configures the number of times each request is attempted before a server or network error is returned.
@@ -182,8 +212,9 @@ impl<'a, A: AuthType<'a>> Builder<'a, A> {
 /// The client automatically inserts pauses between requests if necessary according to the API's [rate limits](https://github.com/speedruncomorg/api/blob/master/throttling.md). However, this only works if your application uses the same `Client` for all API requests. If you use multiple `Client`s, you risk getting HTTP `420` errors due to rate limiting.
 #[derive(Debug, Clone)]
 pub struct Client<A = NoAuth> {
-    recent_requests: Arc<RwLock<HashMap<Url, RequestInfo>>>,
+    cache: Arc<RwLock<HashMap<Url, RequestInfo>>>,
     cache_timeout: Option<Duration>,
+    cache_path: Option<PathBuf>,
     num_tries: u8,
     client: reqwest::Client,
     phantom: PhantomData<A>
@@ -241,7 +272,7 @@ impl<A> Client<A> {
         Ok('rate_limit: loop {
             {
                 // check cache
-                let cache = self.recent_requests.read().expect("recent requests lock poisoned");
+                let cache = self.cache.read().expect("recent requests lock poisoned");
                 if let Some(cache_entry) = cache.get(&url) {
                     if self.cache_timeout.map_or(Ok(true), |timeout| cache_entry.timestamp.elapsed().map(|elapsed| elapsed < timeout))? {
                         break serde_json::from_value(cache_entry.data.clone())?;
@@ -256,7 +287,7 @@ impl<A> Client<A> {
                     }
                 }
             }
-            let mut cache = self.recent_requests.write().expect("recent requests lock poisoned");
+            let mut cache = self.cache.write().expect("recent requests lock poisoned");
             while cache.len() >= RATE_LIMIT_NUM_REQUESTS {
                 if cache.values().min_by_key(|cache_entry| cache_entry.timestamp).unwrap().timestamp.elapsed()? < RATE_LIMIT_INTERVAL {
                     continue 'rate_limit;
@@ -285,6 +316,9 @@ impl<A> Client<A> {
                 timestamp: SystemTime::now(),
                 data: response_data.clone()
             });
+            if let Some(ref cache_path) = self.cache_path {
+                serde_json::to_writer(File::create(cache_path)?, &cache.iter().map(|(url, info)| (Serde(url.clone()), info)).collect::<HashMap<_, _>>())?;
+            }
             // return response
             break serde_json::from_value(response_data)?;
         })
@@ -330,7 +364,8 @@ impl<A: Clone> Client<A> {
 impl From<Client<Auth>> for Client<NoAuth> {
     fn from(auth_client: Client<Auth>) -> Client<NoAuth> {
         Client {
-            recent_requests: auth_client.recent_requests,
+            cache: auth_client.cache,
+            cache_path: auth_client.cache_path,
             cache_timeout: auth_client.cache_timeout,
             num_tries: auth_client.num_tries,
             client: auth_client.client,
@@ -359,7 +394,7 @@ struct ResponseData<T> {
 #[derive(Debug, Deserialize, Clone)]
 pub(crate) struct Link {
     pub(crate) rel: String,
-    #[serde(with = "UrlDef")]
+    #[serde(with = "url_serde")]
     pub(crate) uri: Url
 }
 

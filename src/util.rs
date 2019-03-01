@@ -6,7 +6,6 @@ use bigdecimal::{
 };
 use lazy_static::lazy_static;
 use regex::Regex;
-use reqwest::Url;
 use serde_derive::Deserialize;
 
 lazy_static! {
@@ -38,15 +37,5 @@ pub(crate) struct OptDurationDef(#[serde(getter = "unimplemented")] Option<Strin
 impl From<OptDurationDef> for Option<Duration> {
     fn from(OptDurationDef(opt_duration): OptDurationDef) -> Option<Duration> {
         opt_duration.map(|duration_string| DurationDef(duration_string).into())
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(remote = "Url")]
-pub(crate) struct UrlDef(#[serde(getter = "Url::into_string")] String);
-
-impl From<UrlDef> for Url {
-    fn from(UrlDef(url_string): UrlDef) -> Url {
-        Url::parse(&url_string).expect("invalid URL")
     }
 }

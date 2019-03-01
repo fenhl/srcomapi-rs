@@ -13,6 +13,7 @@ reqwest = "*"
 serde = "1"
 serde_derive = "1"
 serde_json = "1"
+url_serde = "*"
 wrapped_enum = "*"
 
 [dependencies.chrono]

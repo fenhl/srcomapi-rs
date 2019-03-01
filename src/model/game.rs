@@ -16,8 +16,7 @@ use crate::{
         category::Category,
         level::Level
     },
-    paginated::PaginatedList,
-    util::UrlDef
+    paginated::PaginatedList
 };
 
 pub(crate) static LIST_URL: &'static str = "/games?_bulk=yes";
@@ -39,7 +38,7 @@ pub struct GameData {
     id: String,
     abbreviation: String,
     names: Names,
-    #[serde(with = "UrlDef")]
+    #[serde(with = "url_serde")]
     weblink: Url
 }
 

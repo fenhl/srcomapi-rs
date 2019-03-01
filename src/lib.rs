@@ -5,7 +5,10 @@
 #![deny(missing_docs, unused, unused_qualifications)]
 #![forbid(unused_import_braces)]
 
-use std::time::SystemTimeError;
+use std::{
+    io,
+    time::SystemTimeError
+};
 use wrapped_enum::wrapped_enum;
 
 pub mod client;
@@ -26,6 +29,8 @@ wrapped_enum! {
     pub enum Error {
         #[allow(missing_docs)]
         InvalidHeaderValue(reqwest::header::InvalidHeaderValue),
+        #[allow(missing_docs)]
+        Io(io::Error),
         #[allow(missing_docs)]
         Other(OtherError),
         #[allow(missing_docs)]

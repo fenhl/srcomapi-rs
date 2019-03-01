@@ -15,8 +15,7 @@ use crate::{
     model::user::User,
     util::{
         DurationDef,
-        OptDurationDef,
-        UrlDef
+        OptDurationDef
     }
 };
 
@@ -78,7 +77,7 @@ pub struct RunData {
     id: String,
     players: Vec<RunnerData>,
     times: Times,
-    #[serde(with = "UrlDef")]
+    #[serde(with = "url_serde")]
     weblink: Url
 }
 
