@@ -4,7 +4,7 @@ use std::{
     collections::{
         BTreeMap,
         HashMap,
-        hash_map
+        btree_map
     },
     fmt,
     hash::Hash,
@@ -119,7 +119,7 @@ impl fmt::Display for Variable {
 
 /// This type is used to filter leaderboards by variable/value pairs via the `Category::leaderboard_filtered` method.
 #[derive(Debug, Default, Clone, Serialize)]
-pub struct Filter(HashMap<String, String>);
+pub struct Filter(BTreeMap<String, String>);
 
 impl<K: fmt::Display, V: ToString> From<BTreeMap<K, V>> for Filter {
     fn from(map: BTreeMap<K, V>) -> Filter {
@@ -140,7 +140,7 @@ impl<K: fmt::Display, V: ToString> FromIterator<(K, V)> for Filter {
 }
 
 impl<'a> IntoIterator for &'a Filter {
-    type IntoIter = hash_map::Iter<'a, String, String>;
+    type IntoIter = btree_map::Iter<'a, String, String>;
     type Item = (&'a String, &'a String);
 
     fn into_iter(self) -> Self::IntoIter {
