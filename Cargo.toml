@@ -20,6 +20,3 @@ wrapped_enum = "*"
 [dependencies.chrono]
 version = "*"
 features = ["serde"]
-
-[patch.crates-io]
-native-tls = { git = "https://github.com/fenhl/rust-native-tls", branch = "fix-deps" } # until https://github.com/sfackler/rust-native-tls/issues/119 is fixed
