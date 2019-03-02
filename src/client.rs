@@ -80,9 +80,9 @@ pub trait IntoTimeout {
     fn into_timeout(self) -> Option<Range<Duration>>;
 }
 
-impl IntoTimeout for Duration {
+impl IntoTimeout for () {
     fn into_timeout(self) -> Option<Range<Duration>> {
-        Some(self..self)
+        None
     }
 }
 
@@ -92,15 +92,34 @@ impl IntoTimeout for Range<Duration> {
     }
 }
 
+impl IntoTimeout for Range<chrono::Duration> {
+    fn into_timeout(self) -> Option<Range<Duration>> {
+        Some(self.start.to_std().unwrap_or_default()..self.end.to_std().unwrap_or_default())
+    }
+}
+
+impl IntoTimeout for Duration {
+    fn into_timeout(self) -> Option<Range<Duration>> {
+        Some(self..self)
+    }
+}
+
+impl IntoTimeout for chrono::Duration {
+    fn into_timeout(self) -> Option<Range<Duration>> {
+        let self_std = self.to_std().unwrap_or_default();
+        Some(self_std..self_std)
+    }
+}
+
 impl IntoTimeout for RangeTo<Duration> {
     fn into_timeout(self) -> Option<Range<Duration>> {
         Some(Duration::default()..self.end)
     }
 }
 
-impl IntoTimeout for () {
+impl IntoTimeout for RangeTo<chrono::Duration> {
     fn into_timeout(self) -> Option<Range<Duration>> {
-        None
+        Some(Duration::default()..self.end.to_std().unwrap_or_default())
     }
 }
 
