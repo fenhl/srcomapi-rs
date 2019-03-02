@@ -7,6 +7,10 @@ use std::{
     fs::File,
     iter::FromIterator,
     marker::PhantomData,
+    ops::{
+        Range,
+        RangeTo
+    },
     path::PathBuf,
     sync::{
         Arc,
@@ -18,6 +22,7 @@ use std::{
         SystemTime
     }
 };
+use rand::prelude::*;
 use reqwest::{
     self,
     IntoUrl,
@@ -67,6 +72,52 @@ impl<'a> AuthType<'a> for NoAuth {
     type Info = ();
 }
 
+/// The trait for parameters to `Builder::cache_timeout`.
+pub trait IntoTimeout {
+    /// Performs the conversion.
+    ///
+    /// See `Builder::cache_timeout` for details.
+    fn into_timeout(self) -> Option<Range<Duration>>;
+}
+
+impl IntoTimeout for Duration {
+    fn into_timeout(self) -> Option<Range<Duration>> {
+        Some(self..self)
+    }
+}
+
+impl IntoTimeout for Range<Duration> {
+    fn into_timeout(self) -> Option<Range<Duration>> {
+        Some(self)
+    }
+}
+
+impl IntoTimeout for RangeTo<Duration> {
+    fn into_timeout(self) -> Option<Range<Duration>> {
+        Some(Duration::default()..self.end)
+    }
+}
+
+impl IntoTimeout for () {
+    fn into_timeout(self) -> Option<Range<Duration>> {
+        None
+    }
+}
+
+impl<T: IntoTimeout> IntoTimeout for Option<T> {
+    fn into_timeout(self) -> Option<Range<Duration>> {
+        self.and_then(T::into_timeout)
+    }
+}
+
+fn timestamp_is_valid(timestamp: SystemTime, timeout: &Range<Duration>) -> bool {
+    timestamp.elapsed().map(|elapsed|
+        elapsed < timeout.start
+        || elapsed < timeout.end
+        && thread_rng().gen_bool((timeout.end - elapsed).as_secs() as f64 / (timeout.end - timeout.start).as_secs() as f64) //TODO use Duration::div_duration when stable
+    ).unwrap_or_default()
+}
+
 /// A `Client` builder that allows configuring additional settings of the client.
 #[derive(Debug)]
 pub struct Builder<'a, A: AuthType<'a> = NoAuth> {
@@ -74,7 +125,7 @@ pub struct Builder<'a, A: AuthType<'a> = NoAuth> {
     api_key: A::Info,
     cache: HashMap<Url, RequestInfo>,
     cache_path: Option<PathBuf>,
-    cache_timeout: Option<Duration>,
+    cache_timeout: Option<Range<Duration>>,
     num_tries: u8
 }
 
@@ -90,7 +141,7 @@ impl<'a> Builder<'a, NoAuth> {
             api_key: (),
             cache: HashMap::default(),
             cache_path: None,
-            cache_timeout: Some(RATE_LIMIT_INTERVAL),
+            cache_timeout: Some(RATE_LIMIT_INTERVAL..RATE_LIMIT_INTERVAL),
             num_tries: 1
         }
     }
@@ -124,9 +175,7 @@ impl<'a> Builder<'a, NoAuth> {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(reqwest::header::USER_AGENT, reqwest::header::HeaderValue::from_static(self.user_agent));
         Ok(Client {
-            cache: Arc::new(RwLock::new(self.cache)),
-            cache_path: self.cache_path,
-            cache_timeout: self.cache_timeout,
+            cache: Cache::new(self.cache, self.cache_path, self.cache_timeout),
             num_tries: self.num_tries,
             client: reqwest::Client::builder()
                 .default_headers(headers)
@@ -151,9 +200,7 @@ impl<'a> Builder<'a, Auth> {
         headers.insert(reqwest::header::USER_AGENT, reqwest::header::HeaderValue::from_static(self.user_agent));
         headers.insert("X-API-Key", reqwest::header::HeaderValue::from_str(self.api_key)?);
         Ok(Client {
-            cache: Arc::new(RwLock::new(self.cache)),
-            cache_path: self.cache_path,
-            cache_timeout: self.cache_timeout,
+            cache: Cache::new(self.cache, self.cache_path, self.cache_timeout),
             num_tries: self.num_tries,
             client: reqwest::Client::builder()
                 .default_headers(headers)
@@ -168,9 +215,14 @@ impl<'a, A: AuthType<'a>> Builder<'a, A> {
     ///
     /// `None` means cache entries live forever and once a response for a given endpoint has been cached will be reused for the remainder of the client's lifetime.
     ///
+    /// A range means that cache entries whose age lies within the range are randomly considered valid or invalid.
+    ///
     /// The default value is the value of `RATE_LIMIT_INTERVAL`, i.e. the same as the rate limiting interval.
-    pub fn cache_timeout(self, cache_timeout: Option<Duration>) -> Builder<'a, A> {
-        Builder { cache_timeout, ..self }
+    pub fn cache_timeout(self, cache_timeout: impl IntoTimeout) -> Builder<'a, A> {
+        Builder {
+            cache_timeout: cache_timeout.into_timeout(),
+            ..self
+        }
     }
 
     /// Initializes the cache for API responses from disk.
@@ -182,8 +234,8 @@ impl<'a, A: AuthType<'a>> Builder<'a, A> {
     /// If an I/O error occurs, or if the file is not a valid cache.
     pub fn disk_cache(self, cache_path: PathBuf) -> Result<Builder<'a, A>> {
         let mut cache = serde_json::from_reader::<_, HashMap<Serde<Url>, RequestInfo>>(File::open(&cache_path)?)?;
-        if let Some(timeout) = self.cache_timeout {
-            cache.retain(|_, req_info| req_info.timestamp.elapsed().map(|elapsed| elapsed < timeout).unwrap_or_default());
+        if let Some(ref timeout) = self.cache_timeout {
+            cache.retain(|_, req_info| timestamp_is_valid(req_info.timestamp, timeout));
         }
         Ok(Builder {
             cache: cache.into_iter().map(|(url, info)| (url.into_inner(), info)).collect(),
@@ -207,14 +259,72 @@ impl<'a, A: AuthType<'a>> Builder<'a, A> {
     }
 }
 
+#[derive(Debug)]
+struct Cache {
+    data: HashMap<Url, RequestInfo>,
+    path: Option<PathBuf>,
+    timeout: Option<Range<Duration>>,
+    changes: u8
+}
+
+impl Cache {
+    fn new(data: HashMap<Url, RequestInfo>, path: Option<PathBuf>, timeout: Option<Range<Duration>>) -> Arc<RwLock<Cache>> {
+        Arc::new(RwLock::new(Cache {
+            data, path, timeout,
+            changes: 0
+        }))
+    }
+
+    fn get(&self, url: &Url) -> Option<serde_json::Value> {
+        if let Some(cache_entry) = self.data.get(url) {
+            if self.timeout.as_ref().map_or(true, |timeout| timestamp_is_valid(cache_entry.timestamp, timeout)) {
+                return Some(cache_entry.data.clone());
+            }
+        }
+        None
+    }
+
+    fn insert(&mut self, url: Url, info: RequestInfo) {
+        self.data.insert(url, info);
+        self.changes += 1;
+        if self.changes >= 16 {
+            if let Ok(()) = self.persist() {
+                self.changes = 0;
+            }
+        }
+    }
+
+    fn persist(&self) -> Result<()> {
+        if let Some(ref path) = self.path {
+            serde_json::to_writer(File::create(path)?, &self.data.iter().map(|(url, info)| (Serde(url.clone()), info)).collect::<HashMap<_, _>>())?;
+        }
+        Ok(())
+    }
+
+    fn rate_limited(&self) -> Result<Option<Duration>> {
+        let recent_request_times = self.data.values().map(|cache_entry| cache_entry.timestamp).filter(|timestamp| timestamp.elapsed().map(|elapsed| elapsed < RATE_LIMIT_INTERVAL).unwrap_or(true)).collect::<Vec<_>>();
+        if recent_request_times.len() >= RATE_LIMIT_NUM_REQUESTS {
+            let elapsed = recent_request_times.iter().min().unwrap().elapsed()?;
+            if elapsed < RATE_LIMIT_INTERVAL {
+                return Ok(Some(RATE_LIMIT_INTERVAL - elapsed));
+            }
+        }
+        Ok(None)
+    }
+}
+
+impl Drop for Cache {
+    fn drop(&mut self) {
+        let _ = self.persist();
+    }
+}
+
 /// The entry point to the API.
 ///
 /// The client automatically inserts pauses between requests if necessary according to the API's [rate limits](https://github.com/speedruncomorg/api/blob/master/throttling.md). However, this only works if your application uses the same `Client` for all API requests. If you use multiple `Client`s, you risk getting HTTP `420` errors due to rate limiting.
 #[derive(Debug, Clone)]
 pub struct Client<A = NoAuth> {
-    cache: Arc<RwLock<HashMap<Url, RequestInfo>>>,
-    cache_timeout: Option<Duration>,
-    cache_path: Option<PathBuf>,
+    cache: Arc<RwLock<Cache>>,
     num_tries: u8,
     client: reqwest::Client,
     phantom: PhantomData<A>
@@ -269,31 +379,17 @@ impl<A> Client<A> {
     where Q::Item: Borrow<(K, V)> {
         let mut url = url.into_url()?;
         url.query_pairs_mut().extend_pairs(query);
-        Ok('rate_limit: loop {
-            {
-                // check cache
-                let cache = self.cache.read().expect("recent requests lock poisoned");
-                if let Some(cache_entry) = cache.get(&url) {
-                    if self.cache_timeout.map_or(Ok(true), |timeout| cache_entry.timestamp.elapsed().map(|elapsed| elapsed < timeout))? {
-                        break serde_json::from_value(cache_entry.data.clone())?;
-                    }
-                }
-                // wait for rate limit
-                if cache.len() >= RATE_LIMIT_NUM_REQUESTS {
-                    let elapsed = cache.values().min_by_key(|cache_entry| cache_entry.timestamp).unwrap().timestamp.elapsed()?;
-                    if elapsed < RATE_LIMIT_INTERVAL {
-                        drop(cache);
-                        thread::sleep(RATE_LIMIT_INTERVAL - elapsed);
-                    }
-                }
+        Ok(loop {
+            // check cache
+            if let Some(cache_entry) = self.cache.read().expect("cache lock poisoned").get(&url) {
+                break serde_json::from_value(cache_entry)?;
             }
-            let mut cache = self.cache.write().expect("recent requests lock poisoned");
-            while cache.len() >= RATE_LIMIT_NUM_REQUESTS {
-                if cache.values().min_by_key(|cache_entry| cache_entry.timestamp).unwrap().timestamp.elapsed()? < RATE_LIMIT_INTERVAL {
-                    continue 'rate_limit;
-                }
-                let oldest_url = cache.iter().min_by_key(|(_, cache_entry)| cache_entry.timestamp).unwrap().0.clone();
-                cache.remove(&oldest_url);
+            // wait for rate limit
+            let mut cache = self.cache.write().expect("cache lock poisoned");
+            if let Some(rate_limit_timeout) = cache.rate_limited()? {
+                drop(cache);
+                thread::sleep(rate_limit_timeout);
+                continue;
             }
             // send request
             let mut response_data = self.client.get(url.clone())
@@ -316,9 +412,6 @@ impl<A> Client<A> {
                 timestamp: SystemTime::now(),
                 data: response_data.clone()
             });
-            if let Some(ref cache_path) = self.cache_path {
-                serde_json::to_writer(File::create(cache_path)?, &cache.iter().map(|(url, info)| (Serde(url.clone()), info)).collect::<HashMap<_, _>>())?;
-            }
             // return response
             break serde_json::from_value(response_data)?;
         })
@@ -365,8 +458,6 @@ impl From<Client<Auth>> for Client<NoAuth> {
     fn from(auth_client: Client<Auth>) -> Client<NoAuth> {
         Client {
             cache: auth_client.cache,
-            cache_path: auth_client.cache_path,
-            cache_timeout: auth_client.cache_timeout,
             num_tries: auth_client.num_tries,
             client: auth_client.client,
             phantom: PhantomData
