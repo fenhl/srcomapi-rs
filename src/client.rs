@@ -287,7 +287,7 @@ impl Cache {
     fn insert(&mut self, url: Url, info: RequestInfo) {
         self.data.insert(url, info);
         self.changes += 1;
-        if self.changes >= 16 {
+        if self.changes >= 64 {
             if let Ok(()) = self.persist() {
                 self.changes = 0;
             }
