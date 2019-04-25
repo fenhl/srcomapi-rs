@@ -20,7 +20,9 @@ pub(crate) mod util;
 #[derive(Debug)]
 pub enum OtherError {
     /// Returned by `Category::game` if the API didn't return a link with `"rel": "game"`.
-    MissingGameRel
+    MissingGameRel,
+    /// Returned by `RunStatus::examiner` if the run hasn't been verified or rejected yet.
+    UnverifiedRun
 }
 
 wrapped_enum! {

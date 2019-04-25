@@ -4,9 +4,11 @@ use std::{
     fmt,
     time::Duration
 };
+use chrono::prelude::*;
 use reqwest::Url;
 use serde_derive::Deserialize;
 use crate::{
+    OtherError,
     Result,
     client::{
         AnnotatedData,
@@ -71,11 +73,48 @@ pub struct Times {
     pub ingame: Option<Duration>
 }
 
+/// The submission status of a run (verified, rejected, or new).
+#[derive(Debug, Deserialize, Clone)]
+#[serde(tag = "status", rename_all = "kebab-case")]
+pub enum RunStatus {
+    /// The run has neither been verified nor rejected yet.
+    New,
+    #[serde(rename_all = "kebab-case")]
+    /// The run has been verified by a leaderboard moderator.
+    Verified {
+        /// The ID of the user who verified the run.
+        examiner: String,
+        /// The time when the run was verified. Can be `None` for old runs.
+        verify_date: Option<DateTime<Utc>>
+    },
+    /// The run has been rejected by a leaderboard moderator.
+    Rejected {
+        /// The ID of the user who rejected the run.
+        examiner: String,
+        /// The reason why the run was rejected, given by the examiner.
+        reason: String
+    }
+}
+
+impl RunStatus {
+    /// The user who verified or rejected this run. Returns `OtherError::UnverifiedRun` if the run has neither been verified nor rejected.
+    pub fn examiner(&self, client: &Client) -> Result<User> {
+        match self {
+            RunStatus::New => Err(OtherError::UnverifiedRun.into()),
+            RunStatus::Verified { examiner, .. }
+            | RunStatus::Rejected { examiner, .. } => User::from_id(client, examiner)
+        }
+    }
+}
+
 /// The cached data for a speedrun. This type is an implementation detail. You're probably looking for `Run` instead.
 #[derive(Debug, Deserialize, Clone)]
 pub struct RunData {
+    date: Option<NaiveDate>,
     id: String,
     players: Vec<RunnerData>,
+    status: RunStatus,
+    submitted: Option<DateTime<Utc>>,
     times: Times,
     #[serde(with = "url_serde")]
     weblink: Url
@@ -90,11 +129,31 @@ impl Run {
         &self.data.id
     }
 
+    /// The date on which the run was played, if known. Submitted by the runner.
+    pub fn date(&self) -> Option<NaiveDate> {
+        self.data.date
+    }
+
+    /// The user who verified or rejected this run. Returns `OtherError::UnverifiedRun` if the run has neither been verified nor rejected.
+    pub fn examiner(&self, client: &Client) -> Result<User> {
+        self.status().examiner(client)
+    }
+
     /// Returns the list of players who participated in this run.
     pub fn runners(&self) -> Result<Vec<Runner>> {
         self.data.players.iter()
             .map(|runner_data| Runner::new(&self.client, runner_data))
             .collect()
+    }
+
+    /// The current submission status of this run (verified, rejected, or new).
+    pub fn status(&self) -> &RunStatus {
+        &self.data.status
+    }
+
+    /// The time when the run was submitted to the leaderboard. Can be `None` for old runs.
+    pub fn submitted(&self) -> Option<DateTime<Utc>> {
+        self.data.submitted
     }
 
     /// Returns the duration of this run in the primary timing method used by the leaderboard.
