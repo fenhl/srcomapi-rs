@@ -8,7 +8,6 @@ use chrono::prelude::*;
 use reqwest::Url;
 use serde_derive::Deserialize;
 use crate::{
-    OtherError,
     Result,
     client::{
         AnnotatedData,
@@ -79,31 +78,31 @@ pub struct Times {
 pub enum RunStatus {
     /// The run has neither been verified nor rejected yet.
     New,
-    #[serde(rename_all = "kebab-case")]
     /// The run has been verified by a leaderboard moderator.
+    #[serde(rename_all = "kebab-case")]
     Verified {
-        /// The ID of the user who verified the run.
-        examiner: String,
+        /// The ID of the user who verified the run. Can be `None` for old runs.
+        examiner: Option<String>,
         /// The time when the run was verified. Can be `None` for old runs.
         verify_date: Option<DateTime<Utc>>
     },
     /// The run has been rejected by a leaderboard moderator.
     Rejected {
-        /// The ID of the user who rejected the run.
-        examiner: String,
+        /// The ID of the user who rejected the run. Can be `None` for old runs.
+        examiner: Option<String>,
         /// The reason why the run was rejected, given by the examiner.
         reason: String
     }
 }
 
 impl RunStatus {
-    /// The user who verified or rejected this run. Returns `OtherError::UnverifiedRun` if the run has neither been verified nor rejected.
-    pub fn examiner(&self, client: &Client) -> Result<User> {
-        match self {
-            RunStatus::New => Err(OtherError::UnverifiedRun.into()),
-            RunStatus::Verified { examiner, .. }
-            | RunStatus::Rejected { examiner, .. } => User::from_id(client, examiner)
-        }
+    /// The user who verified or rejected this run. Returns `Ok(None)` if the run has neither been verified nor rejected, or if it's unknown who did so.
+    pub fn examiner(&self, client: &Client) -> Result<Option<User>> {
+        Ok(match self {
+            RunStatus::Verified { examiner: Some(id), .. }
+            | RunStatus::Rejected { examiner: Some(id), .. } => Some(User::from_id(client, id)?),
+            _ => None
+        })
     }
 }
 
@@ -134,8 +133,8 @@ impl Run {
         self.data.date
     }
 
-    /// The user who verified or rejected this run. Returns `OtherError::UnverifiedRun` if the run has neither been verified nor rejected.
-    pub fn examiner(&self, client: &Client) -> Result<User> {
+    /// The user who verified or rejected this run. Returns `Ok(None)` if the run has neither been verified nor rejected, of if it's unknown who did so.
+    pub fn examiner(&self, client: &Client) -> Result<Option<User>> {
         self.status().examiner(client)
     }
 
