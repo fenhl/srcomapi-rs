@@ -125,8 +125,7 @@ pub struct RunData {
     status: RunStatus,
     submitted: Option<DateTime<Utc>>,
     times: Times,
-    #[serde(default)]
-    videos: Videos,
+    videos: Option<Videos>,
     #[serde(with = "url_serde")]
     weblink: Url
 }
@@ -181,14 +180,14 @@ impl Run {
     ///
     /// See also: the `videos` method.
     pub fn video_text(&self) -> Option<&str> {
-        self.data.videos.text.as_ref().map(String::as_str)
+        self.data.videos.as_ref().and_then(|videos| videos.text.as_ref()).map(String::as_str)
     }
 
     /// Returns the video link given in the submission, if any, followed by any recognized video links in the description.
     ///
     /// Only some video websites are recognized when in the description, see [the API docs](https://github.com/speedruncomorg/api/blob/master/version1/runs.md) for details.
     pub fn videos<'a>(&'a self) -> Box<(dyn Iterator<Item = &Url> + 'a)> {
-        if let Some(ref links) = self.data.videos.links {
+        if let Some(links) = self.data.videos.as_ref().and_then(|videos| videos.links.as_ref()) {
             Box::new(links.iter().map(|link| &link.uri))
         } else {
             Box::new(iter::empty())
