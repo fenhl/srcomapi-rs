@@ -505,7 +505,7 @@ struct ResponseData<T> {
 
 #[derive(Debug, Deserialize, Clone)]
 pub(crate) struct Link {
-    pub(crate) rel: String,
+    pub(crate) rel: Option<String>,
     #[serde(with = "url_serde")]
     pub(crate) uri: Url
 }

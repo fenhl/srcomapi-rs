@@ -3,6 +3,7 @@
 use {
     std::{
         fmt,
+        iter,
         time::Duration
     },
     chrono::prelude::*,
@@ -12,7 +13,8 @@ use {
         Result,
         client::{
             AnnotatedData,
-            Client
+            Client,
+            Link
         },
         model::user::User,
         util::{
@@ -108,6 +110,12 @@ impl RunStatus {
     }
 }
 
+#[derive(Debug, Default, Deserialize, Clone)]
+struct Videos {
+    text: Option<String>,
+    links: Option<Vec<Link>>
+}
+
 /// The cached data for a speedrun. This type is an implementation detail. You're probably looking for `Run` instead.
 #[derive(Debug, Deserialize, Clone)]
 pub struct RunData {
@@ -117,6 +125,8 @@ pub struct RunData {
     status: RunStatus,
     submitted: Option<DateTime<Utc>>,
     times: Times,
+    #[serde(default)]
+    videos: Videos,
     #[serde(with = "url_serde")]
     weblink: Url
 }
@@ -165,6 +175,24 @@ impl Run {
     /// Returns the duration of this run in the different documented timing methods.
     pub fn times(&self) -> &Times {
         &self.data.times
+    }
+
+    /// The contents of the run submission's “video link” field, if it's not empty but also not a URL.
+    ///
+    /// See also: the `videos` method.
+    pub fn video_text(&self) -> Option<&str> {
+        self.data.videos.text.as_ref().map(String::as_str)
+    }
+
+    /// Returns the video link given in the submission, if any, followed by any recognized video links in the description.
+    ///
+    /// Only some video websites are recognized when in the description, see [the API docs](https://github.com/speedruncomorg/api/blob/master/version1/runs.md) for details.
+    pub fn videos<'a>(&'a self) -> Box<(dyn Iterator<Item = &Url> + 'a)> {
+        if let Some(ref links) = self.data.videos.links {
+            Box::new(links.iter().map(|link| &link.uri))
+        } else {
+            Box::new(iter::empty())
+        }
     }
 
     /// Returns the URL to the run's page on speedrun.com.

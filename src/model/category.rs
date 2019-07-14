@@ -71,7 +71,7 @@ impl Category {
     /// Returns the game to which this category belongs.
     pub fn game(&self) -> Result<Game> {
         let (link,) = self.data.links.iter()
-            .filter(|link| &link.rel == "game")
+            .filter(|link| link.rel.as_ref().map_or(false, |rel| rel == "game"))
             .collect_tuple().ok_or(OtherError::MissingGameRel)?;
         Ok(self.client.annotate(
             self.client.get_abs(link.uri.clone())?
