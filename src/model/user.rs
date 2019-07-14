@@ -1,15 +1,17 @@
 //! Users are the individuals who have registered an account on speedrun.com
 
-use std::fmt;
-use chrono::prelude::*;
-use serde_derive::Deserialize;
-use crate::{
-    Result,
-    client::{
-        AnnotatedData,
-        Client
-    },
-    paginated::PaginatedList
+use {
+    std::fmt,
+    chrono::prelude::*,
+    serde_derive::Deserialize,
+    crate::{
+        Result,
+        client::{
+            AnnotatedData,
+            Client
+        },
+        paginated::PaginatedList
+    }
 };
 
 /// The different names a user has registered.
@@ -53,7 +55,7 @@ impl User {
 
 /// Displays the users's international username.
 impl fmt::Display for User {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.data.names.international.fmt(f)
     }
 }

@@ -1,24 +1,26 @@
 //! Variables are custom criteria to distinguish between runs done in the same category or level
 
-use std::{
-    collections::{
-        BTreeMap,
-        HashMap,
-        btree_map
+use {
+    std::{
+        collections::{
+            BTreeMap,
+            HashMap,
+            btree_map
+        },
+        fmt,
+        hash::Hash,
+        iter::FromIterator
     },
-    fmt,
-    hash::Hash,
-    iter::FromIterator
-};
-use serde_derive::{
-    Deserialize,
-    Serialize
-};
-use crate::{
-    Result,
-    client::{
-        AnnotatedData,
-        Client
+    serde_derive::{
+        Deserialize,
+        Serialize
+    },
+    crate::{
+        Result,
+        client::{
+            AnnotatedData,
+            Client
+        }
     }
 };
 
@@ -112,7 +114,7 @@ impl Variable {
 
 /// Displays the variable name.
 impl fmt::Display for Variable {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.data.name.fmt(f)
     }
 }

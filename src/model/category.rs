@@ -1,28 +1,30 @@
 //! Categories are the different rulesets for speedruns
 
-use std::{
-    fmt,
-    iter::FromIterator
-};
-use itertools::Itertools;
-use serde_derive::Deserialize;
-use crate::{
-    OtherError,
-    Result,
-    client::{
-        AnnotatedData,
-        Client,
-        Link
+use {
+    std::{
+        fmt,
+        iter::FromIterator
     },
-    model::{
-        game::Game,
-        run::{
-            Run,
-            RunData
+    itertools::Itertools,
+    serde_derive::Deserialize,
+    crate::{
+        OtherError,
+        Result,
+        client::{
+            AnnotatedData,
+            Client,
+            Link
         },
-        variable::{
-            Filter,
-            Variable
+        model::{
+            game::Game,
+            run::{
+                Run,
+                RunData
+            },
+            variable::{
+                Filter,
+                Variable
+            }
         }
     }
 };
@@ -130,7 +132,7 @@ pub trait ToLeaderboard: Sized {
 
 /// Displays the category name.
 impl fmt::Display for Category {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.data.name.fmt(f)
     }
 }

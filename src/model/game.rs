@@ -1,22 +1,24 @@
 //! Games are the things users do speedruns in
 
-use std::{
-    fmt,
-    iter::FromIterator
-};
-use reqwest::Url;
-use serde_derive::Deserialize;
-use crate::{
-    Result,
-    client::{
-        AnnotatedData,
-        Client
+use {
+    std::{
+        fmt,
+        iter::FromIterator
     },
-    model::{
-        category::Category,
-        level::Level
-    },
-    paginated::PaginatedList
+    reqwest::Url,
+    serde_derive::Deserialize,
+    crate::{
+        Result,
+        client::{
+            AnnotatedData,
+            Client
+        },
+        model::{
+            category::Category,
+            level::Level
+        },
+        paginated::PaginatedList
+    }
 };
 
 pub(crate) static LIST_URL: &'static str = "/games?_bulk=yes";
@@ -88,7 +90,7 @@ impl Game {
 
 /// Displays the game's English name.
 impl fmt::Display for Game {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.data.names.international.fmt(f)
     }
 }

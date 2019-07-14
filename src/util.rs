@@ -1,12 +1,14 @@
-use std::time::Duration;
-use bigdecimal::{
-    BigDecimal,
-    ToPrimitive,
-    Zero
+use {
+    std::time::Duration,
+    bigdecimal::{
+        BigDecimal,
+        ToPrimitive,
+        Zero
+    },
+    lazy_static::lazy_static,
+    regex::Regex,
+    serde_derive::Deserialize
 };
-use lazy_static::lazy_static;
-use regex::Regex;
-use serde_derive::Deserialize;
 
 lazy_static! {
     static ref DURATION_RE: Regex = Regex::new("^PT(?:([0-9.]+)H)?(?:([0-9.]+)M)?(?:([0-9.]+)S)?$").unwrap();

@@ -1,22 +1,24 @@
 //! Contains the type representing a speedrun
 
-use std::{
-    fmt,
-    time::Duration
-};
-use chrono::prelude::*;
-use reqwest::Url;
-use serde_derive::Deserialize;
-use crate::{
-    Result,
-    client::{
-        AnnotatedData,
-        Client
+use {
+    std::{
+        fmt,
+        time::Duration
     },
-    model::user::User,
-    util::{
-        DurationDef,
-        OptDurationDef
+    chrono::prelude::*,
+    reqwest::Url,
+    serde_derive::Deserialize,
+    crate::{
+        Result,
+        client::{
+            AnnotatedData,
+            Client
+        },
+        model::user::User,
+        util::{
+            DurationDef,
+            OptDurationDef
+        }
     }
 };
 
@@ -47,7 +49,7 @@ impl Runner {
 
 /// Displays the users's international username.
 impl fmt::Display for Runner {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Runner::User(ref user) => user.fmt(f),
             Runner::Guest(ref name) => name.fmt(f)

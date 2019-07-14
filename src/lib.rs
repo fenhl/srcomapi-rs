@@ -1,15 +1,14 @@
 //! A Rust client for the [speedrun.com REST API](https://github.com/speedruncomorg/api).
 
-#![cfg_attr(test, deny(warnings))]
-#![warn(trivial_casts)]
-#![deny(missing_docs, unused, unused_qualifications)]
-#![forbid(unused_import_braces)]
+#![deny(missing_docs, rust_2018_idioms, unused, unused_import_braces, unused_qualifications, warnings)]
 
-use std::{
-    io,
-    time::SystemTimeError
+use {
+    std::{
+        io,
+        time::SystemTimeError
+    },
+    wrapped_enum::wrapped_enum
 };
-use wrapped_enum::wrapped_enum;
 
 pub mod client;
 pub mod model;

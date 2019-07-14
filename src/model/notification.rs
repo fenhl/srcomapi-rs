@@ -1,18 +1,20 @@
 //! Notifications are system-generated messages sent to users when certain events concerning them happen on the site, like somebody liking a post or a run being verified
 
-use std::{
-    fmt,
-    iter::FromIterator
-};
-use chrono::prelude::*;
-use reqwest::Url;
-use serde_derive::Deserialize;
-use crate::{
-    Result,
-    client::{
-        AnnotatedData,
-        Auth,
-        Client
+use {
+    std::{
+        fmt,
+        iter::FromIterator
+    },
+    chrono::prelude::*,
+    reqwest::Url,
+    serde_derive::Deserialize,
+    crate::{
+        Result,
+        client::{
+            AnnotatedData,
+            Auth,
+            Client
+        }
     }
 };
 
@@ -100,7 +102,7 @@ impl Notification {
 
 /// Displays the notification's text.
 impl fmt::Display for Notification {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.data.text.fmt(f)
     }
 }

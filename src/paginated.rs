@@ -1,18 +1,20 @@
 //! A data structure for working with [paginated](https://github.com/speedruncomorg/api/blob/master/version1/pagination.md) endpoints
 
-use std::{
-    iter::FusedIterator,
-    vec
-};
-use serde::de::DeserializeOwned;
-use serde_derive::Deserialize;
-use crate::{
-    Result,
-    client::{
-        AnnotatedData,
-        Client
+use {
+    std::{
+        iter::FusedIterator,
+        vec
     },
-    model::game
+    serde::de::DeserializeOwned,
+    serde_derive::Deserialize,
+    crate::{
+        Result,
+        client::{
+            AnnotatedData,
+            Client
+        },
+        model::game
+    }
 };
 
 #[derive(Debug, Deserialize)]

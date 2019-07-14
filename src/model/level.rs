@@ -1,28 +1,30 @@
 //! Levels are the stages/worlds/maps within a game
 
-use std::{
-    fmt,
-    iter::FromIterator
-};
-use itertools::Itertools;
-use serde_derive::Deserialize;
-use crate::{
-    OtherError,
-    Result,
-    client::{
-        AnnotatedData,
-        Client,
-        Link
+use {
+    std::{
+        fmt,
+        iter::FromIterator
     },
-    model::{
-        category::{
-            Category,
-            Leaderboard,
-            ToLeaderboard
+    itertools::Itertools,
+    serde_derive::Deserialize,
+    crate::{
+        OtherError,
+        Result,
+        client::{
+            AnnotatedData,
+            Client,
+            Link
         },
-        game::Game,
-        run::Run,
-        variable::Filter
+        model::{
+            category::{
+                Category,
+                Leaderboard,
+                ToLeaderboard
+            },
+            game::Game,
+            run::Run,
+            variable::Filter
+        }
     }
 };
 
@@ -63,7 +65,7 @@ impl Level {
 
 /// Displays the level name.
 impl fmt::Display for Level {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.data.name.fmt(f)
     }
 }

@@ -1,40 +1,42 @@
 //! The `Client` type is the entry point to the API.
 
-use std::{
-    borrow::Borrow,
-    collections::HashMap,
-    fmt,
-    fs::File,
-    iter::FromIterator,
-    marker::PhantomData,
-    ops::{
-        Range,
-        RangeTo
+use {
+    std::{
+        borrow::Borrow,
+        collections::HashMap,
+        fmt,
+        fs::File,
+        iter::FromIterator,
+        marker::PhantomData,
+        ops::{
+            Range,
+            RangeTo
+        },
+        path::PathBuf,
+        sync::{
+            Arc,
+            RwLock
+        },
+        thread,
+        time::{
+            Duration,
+            SystemTime
+        }
     },
-    path::PathBuf,
-    sync::{
-        Arc,
-        RwLock
+    rand::prelude::*,
+    reqwest::{
+        self,
+        IntoUrl,
+        Url
     },
-    thread,
-    time::{
-        Duration,
-        SystemTime
-    }
+    serde::de::DeserializeOwned,
+    serde_derive::{
+        Deserialize,
+        Serialize
+    },
+    url_serde::Serde,
+    crate::Result
 };
-use rand::prelude::*;
-use reqwest::{
-    self,
-    IntoUrl,
-    Url
-};
-use serde::de::DeserializeOwned;
-use serde_derive::{
-    Deserialize,
-    Serialize
-};
-use url_serde::Serde;
-use crate::Result;
 
 /// The maximum number requests allowed by the API within one `RATE_LIMIT_INTERVAL`. This number is made public for informational purposes only; the `Client` adheres to the rate limit automatically.
 pub const RATE_LIMIT_NUM_REQUESTS: usize = 100;
@@ -154,7 +156,7 @@ impl<'a> Builder<'a, NoAuth> {
     /// For details on the user agent, see the `Client::new` docs.
     ///
     /// For details on the other configuration options, as well as their default values, see the docs on the respective methods.
-    pub fn new(user_agent: &'static str) -> Builder {
+    pub fn new(user_agent: &'static str) -> Builder<'_> {
         Builder {
             user_agent,
             api_key: (),
@@ -170,7 +172,7 @@ impl<'a> Builder<'a, NoAuth> {
     /// For details on obtaining a user's API key, see [the docs on authentication](https://github.com/speedruncomorg/api/blob/master/authentication.md).
     ///
     /// The default client is unauthenticated and cannot access API endpoints that require authentication. This library enforces that restriction on the type level.
-    pub fn auth(self, api_key: &str) -> Builder<Auth> {
+    pub fn auth(self, api_key: &str) -> Builder<'_, Auth> {
         Builder {
             user_agent: self.user_agent,
             api_key,
