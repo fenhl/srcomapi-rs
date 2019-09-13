@@ -134,6 +134,13 @@ pub struct RunData {
 pub type Run = AnnotatedData<RunData>;
 
 impl Run {
+    /// Returns the run with the given ID.
+    pub fn from_id(client: &Client, id: impl fmt::Display) -> Result<Run> {
+        Ok(client.annotate(
+            client.get(format!("/runs/{}", id))?
+        ))
+    }
+
     /// Returns this run's API ID.
     pub fn id(&self) -> &str {
         &self.data.id
