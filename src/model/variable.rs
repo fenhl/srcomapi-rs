@@ -11,7 +11,7 @@ use {
         hash::Hash,
         iter::FromIterator
     },
-    serde_derive::{
+    serde::{
         Deserialize,
         Serialize
     },

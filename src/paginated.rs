@@ -5,8 +5,10 @@ use {
         iter::FusedIterator,
         vec
     },
-    serde::de::DeserializeOwned,
-    serde_derive::Deserialize,
+    serde::{
+        Deserialize,
+        de::DeserializeOwned
+    },
     crate::{
         Result,
         client::{

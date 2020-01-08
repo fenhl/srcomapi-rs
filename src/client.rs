@@ -29,10 +29,10 @@ use {
         IntoUrl,
         Url
     },
-    serde::de::DeserializeOwned,
-    serde_derive::{
+    serde::{
         Deserialize,
-        Serialize
+        Serialize,
+        de::DeserializeOwned
     },
     url_serde::Serde,
     crate::Result

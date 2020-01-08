@@ -7,7 +7,7 @@ use {
     },
     chrono::prelude::*,
     reqwest::Url,
-    serde_derive::Deserialize,
+    serde::Deserialize,
     crate::{
         Result,
         client::{

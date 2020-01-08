@@ -6,9 +6,9 @@ use {
         iter::FromIterator
     },
     itertools::Itertools,
-    serde_derive::Deserialize,
+    serde::Deserialize,
     crate::{
-        OtherError,
+        Error,
         Result,
         client::{
             AnnotatedData,
@@ -72,7 +72,7 @@ impl Category {
     pub fn game(&self) -> Result<Game> {
         let (link,) = self.data.links.iter()
             .filter(|link| link.rel.as_ref().map_or(false, |rel| rel == "game"))
-            .collect_tuple().ok_or(OtherError::MissingGameRel)?;
+            .collect_tuple().ok_or(Error::MissingGameRel)?;
         Ok(self.client.annotate(
             self.client.get_abs(link.uri.clone())?
         ))

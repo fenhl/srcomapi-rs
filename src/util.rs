@@ -7,7 +7,7 @@ use {
     },
     lazy_static::lazy_static,
     regex::Regex,
-    serde_derive::Deserialize
+    serde::Deserialize
 };
 
 lazy_static! {

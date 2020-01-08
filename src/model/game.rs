@@ -6,7 +6,7 @@ use {
         iter::FromIterator
     },
     reqwest::Url,
-    serde_derive::Deserialize,
+    serde::Deserialize,
     crate::{
         Result,
         client::{

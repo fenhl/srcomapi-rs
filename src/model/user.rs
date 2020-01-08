@@ -3,7 +3,7 @@
 use {
     std::fmt,
     chrono::prelude::*,
-    serde_derive::Deserialize,
+    serde::Deserialize,
     crate::{
         Result,
         client::{
